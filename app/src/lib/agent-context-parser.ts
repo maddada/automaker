@@ -34,8 +34,8 @@ export const DEFAULT_MODEL = "claude-opus-4-5-20251101";
  */
 export function formatModelName(model: string): string {
   if (model.includes("opus")) return "Opus 4.5";
-  if (model.includes("sonnet")) return "Sonnet 4";
-  if (model.includes("haiku")) return "Haiku 3.5";
+  if (model.includes("sonnet")) return "Sonnet 4.5";
+  if (model.includes("haiku")) return "Haiku 4.5";
   return model.split("-").slice(1, 3).join(" ");
 }
 
