@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useSetupStore } from "@/store/setup-store";
+import { useSetupStore, type CodexAuthStatus } from "@/store/setup-store";
 import { useAppStore } from "@/store/app-store";
 import { getElectronAPI } from "@/lib/electron";
 import {
@@ -780,6 +780,22 @@ function CodexSetupStep({
   const [apiKey, setApiKey] = useState("");
   const [isSavingKey, setIsSavingKey] = useState(false);
 
+  // Normalize CLI auth method strings to our store-friendly values
+  const mapAuthMethod = (method?: string): CodexAuthStatus["method"] => {
+    switch (method) {
+      case "cli_verified":
+        return "cli_verified";
+      case "cli_tokens":
+        return "cli_tokens";
+      case "auth_file":
+        return "api_key";
+      case "env_var":
+        return "env";
+      default:
+        return "none";
+    }
+  };
+
   const checkStatus = useCallback(async () => {
     console.log("[Codex Setup] Starting status check...");
     setIsChecking(true);
@@ -805,13 +821,16 @@ function CodexSetupStep({
           setCodexCliStatus(cliStatus);
 
           if (result.auth) {
-            const authStatus = {
+            const method = mapAuthMethod(result.auth.method);
+            
+            const authStatus: CodexAuthStatus = {
               authenticated: result.auth.authenticated,
-              method: result.auth.method === "auth_file" ? "api_key" : result.auth.method === "env_var" ? "env" : "none",
-              apiKeyValid: result.auth.authenticated,
+              method,
+              // Only set apiKeyValid for actual API key methods, not CLI login
+              apiKeyValid: method === "cli_verified" || method === "cli_tokens" ? undefined : result.auth.authenticated,
             };
             console.log("[Codex Setup] Auth Status:", authStatus);
-            setCodexAuthStatus(authStatus as any);
+            setCodexAuthStatus(authStatus);
           } else {
             console.log("[Codex Setup] No auth info in result");
           }

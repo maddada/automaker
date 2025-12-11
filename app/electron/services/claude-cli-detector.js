@@ -1,7 +1,7 @@
-const { execSync, spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const { execSync, spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 
 /**
  * Claude CLI Detector
@@ -21,41 +21,47 @@ class ClaudeCliDetector {
    */
   static getUpdatedPathFromShellConfig() {
     const homeDir = os.homedir();
-    const shell = process.env.SHELL || '/bin/bash';
+    const shell = process.env.SHELL || "/bin/bash";
     const shellName = path.basename(shell);
-    
+
     // Common shell config files
     const configFiles = [];
-    if (shellName.includes('zsh')) {
-      configFiles.push(path.join(homeDir, '.zshrc'));
-      configFiles.push(path.join(homeDir, '.zshenv'));
-      configFiles.push(path.join(homeDir, '.zprofile'));
-    } else if (shellName.includes('bash')) {
-      configFiles.push(path.join(homeDir, '.bashrc'));
-      configFiles.push(path.join(homeDir, '.bash_profile'));
-      configFiles.push(path.join(homeDir, '.profile'));
+    if (shellName.includes("zsh")) {
+      configFiles.push(path.join(homeDir, ".zshrc"));
+      configFiles.push(path.join(homeDir, ".zshenv"));
+      configFiles.push(path.join(homeDir, ".zprofile"));
+    } else if (shellName.includes("bash")) {
+      configFiles.push(path.join(homeDir, ".bashrc"));
+      configFiles.push(path.join(homeDir, ".bash_profile"));
+      configFiles.push(path.join(homeDir, ".profile"));
     }
-    
+
     // Also check common locations
     const commonPaths = [
-      path.join(homeDir, '.local', 'bin'),
-      path.join(homeDir, '.cargo', 'bin'),
-      '/usr/local/bin',
-      '/opt/homebrew/bin',
-      path.join(homeDir, 'bin'),
+      path.join(homeDir, ".local", "bin"),
+      path.join(homeDir, ".cargo", "bin"),
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      path.join(homeDir, "bin"),
     ];
-    
+
     // Try to extract PATH additions from config files
     for (const configFile of configFiles) {
       if (fs.existsSync(configFile)) {
         try {
-          const content = fs.readFileSync(configFile, 'utf-8');
+          const content = fs.readFileSync(configFile, "utf-8");
           // Look for PATH exports that might include claude installation paths
-          const pathMatches = content.match(/export\s+PATH=["']?([^"'\n]+)["']?/g);
+          const pathMatches = content.match(
+            /export\s+PATH=["']?([^"'\n]+)["']?/g
+          );
           if (pathMatches) {
             for (const match of pathMatches) {
-              const pathValue = match.replace(/export\s+PATH=["']?/, '').replace(/["']?$/, '');
-              const paths = pathValue.split(':').filter(p => p && !p.includes('$'));
+              const pathValue = match
+                .replace(/export\s+PATH=["']?/, "")
+                .replace(/["']?$/, "");
+              const paths = pathValue
+                .split(":")
+                .filter((p) => p && !p.includes("$"));
               commonPaths.push(...paths);
             }
           }
@@ -64,26 +70,33 @@ class ClaudeCliDetector {
         }
       }
     }
-    
+
     return [...new Set(commonPaths)]; // Remove duplicates
   }
 
   static detectClaudeInstallation() {
-    console.log('[ClaudeCliDetector] Detecting Claude installation...');
+    console.log("[ClaudeCliDetector] Detecting Claude installation...");
 
     try {
       // Method 1: Check if 'claude' command is in PATH (Unix)
-      if (process.platform !== 'win32') {
+      if (process.platform !== "win32") {
         try {
-          const claudePath = execSync('which claude 2>/dev/null', { encoding: 'utf-8' }).trim();
+          const claudePath = execSync("which claude 2>/dev/null", {
+            encoding: "utf-8",
+          }).trim();
           if (claudePath) {
             const version = this.getClaudeVersion(claudePath);
-            console.log('[ClaudeCliDetector] Found claude at:', claudePath, 'version:', version);
+            console.log(
+              "[ClaudeCliDetector] Found claude at:",
+              claudePath,
+              "version:",
+              version
+            );
             return {
               installed: true,
               path: claudePath,
               version: version,
-              method: 'cli'
+              method: "cli",
             };
           }
         } catch (error) {
@@ -92,17 +105,26 @@ class ClaudeCliDetector {
       }
 
       // Method 2: Check Windows path
-      if (process.platform === 'win32') {
+      if (process.platform === "win32") {
         try {
-          const claudePath = execSync('where claude 2>nul', { encoding: 'utf-8' }).trim().split('\n')[0];
+          const claudePath = execSync("where claude 2>nul", {
+            encoding: "utf-8",
+          })
+            .trim()
+            .split("\n")[0];
           if (claudePath) {
             const version = this.getClaudeVersion(claudePath);
-            console.log('[ClaudeCliDetector] Found claude at:', claudePath, 'version:', version);
+            console.log(
+              "[ClaudeCliDetector] Found claude at:",
+              claudePath,
+              "version:",
+              version
+            );
             return {
               installed: true,
               path: claudePath,
               version: version,
-              method: 'cli'
+              method: "cli",
             };
           }
         } catch (error) {
@@ -111,34 +133,49 @@ class ClaudeCliDetector {
       }
 
       // Method 3: Check for local installation
-      const localClaudePath = path.join(os.homedir(), '.claude', 'local', 'claude');
+      const localClaudePath = path.join(
+        os.homedir(),
+        ".claude",
+        "local",
+        "claude"
+      );
       if (fs.existsSync(localClaudePath)) {
         const version = this.getClaudeVersion(localClaudePath);
-        console.log('[ClaudeCliDetector] Found local claude at:', localClaudePath, 'version:', version);
+        console.log(
+          "[ClaudeCliDetector] Found local claude at:",
+          localClaudePath,
+          "version:",
+          version
+        );
         return {
           installed: true,
           path: localClaudePath,
           version: version,
-          method: 'cli-local'
+          method: "cli-local",
         };
       }
 
       // Method 4: Check common installation locations (including those from shell config)
       const commonPaths = this.getUpdatedPathFromShellConfig();
-      const binaryNames = ['claude', 'claude-code'];
-      
+      const binaryNames = ["claude", "claude-code"];
+
       for (const basePath of commonPaths) {
         for (const binaryName of binaryNames) {
           const claudePath = path.join(basePath, binaryName);
           if (fs.existsSync(claudePath)) {
             try {
               const version = this.getClaudeVersion(claudePath);
-              console.log('[ClaudeCliDetector] Found claude at:', claudePath, 'version:', version);
+              console.log(
+                "[ClaudeCliDetector] Found claude at:",
+                claudePath,
+                "version:",
+                version
+              );
               return {
                 installed: true,
                 path: claudePath,
                 version: version,
-                method: 'cli'
+                method: "cli",
               };
             } catch (error) {
               // File exists but can't get version, might not be executable
@@ -148,29 +185,37 @@ class ClaudeCliDetector {
       }
 
       // Method 5: Try to source shell config and check PATH again (for Unix)
-      if (process.platform !== 'win32') {
+      if (process.platform !== "win32") {
         try {
-          const shell = process.env.SHELL || '/bin/bash';
+          const shell = process.env.SHELL || "/bin/bash";
           const shellName = path.basename(shell);
           const homeDir = os.homedir();
-          
-          let sourceCmd = '';
-          if (shellName.includes('zsh')) {
+
+          let sourceCmd = "";
+          if (shellName.includes("zsh")) {
             sourceCmd = `source ${homeDir}/.zshrc 2>/dev/null && which claude`;
-          } else if (shellName.includes('bash')) {
+          } else if (shellName.includes("bash")) {
             sourceCmd = `source ${homeDir}/.bashrc 2>/dev/null && which claude`;
           }
-          
+
           if (sourceCmd) {
-            const claudePath = execSync(`bash -c "${sourceCmd}"`, { encoding: 'utf-8', timeout: 2000 }).trim();
-            if (claudePath && claudePath.startsWith('/')) {
+            const claudePath = execSync(`bash -c "${sourceCmd}"`, {
+              encoding: "utf-8",
+              timeout: 2000,
+            }).trim();
+            if (claudePath && claudePath.startsWith("/")) {
               const version = this.getClaudeVersion(claudePath);
-              console.log('[ClaudeCliDetector] Found claude via shell config at:', claudePath, 'version:', version);
+              console.log(
+                "[ClaudeCliDetector] Found claude via shell config at:",
+                claudePath,
+                "version:",
+                version
+              );
               return {
                 installed: true,
                 path: claudePath,
                 version: version,
-                method: 'cli'
+                method: "cli",
               };
             }
           }
@@ -179,21 +224,24 @@ class ClaudeCliDetector {
         }
       }
 
-      console.log('[ClaudeCliDetector] Claude CLI not found');
+      console.log("[ClaudeCliDetector] Claude CLI not found");
       return {
         installed: false,
         path: null,
         version: null,
-        method: 'none'
+        method: "none",
       };
     } catch (error) {
-      console.error('[ClaudeCliDetector] Error detecting Claude installation:', error);
+      console.error(
+        "[ClaudeCliDetector] Error detecting Claude installation:",
+        error
+      );
       return {
         installed: false,
         path: null,
         version: null,
-        method: 'none',
-        error: error.message
+        method: "none",
+        error: error.message,
       };
     }
   }
@@ -206,8 +254,8 @@ class ClaudeCliDetector {
   static getClaudeVersion(claudePath) {
     try {
       const version = execSync(`"${claudePath}" --version 2>/dev/null`, {
-        encoding: 'utf-8',
-        timeout: 5000
+        encoding: "utf-8",
+        timeout: 5000,
       }).trim();
       return version || null;
     } catch (error) {
@@ -226,10 +274,10 @@ class ClaudeCliDetector {
    * @returns {Object} Authentication status
    */
   static getAuthStatus(appCredentialsPath) {
-    console.log('[ClaudeCliDetector] Checking auth status...');
+    console.log("[ClaudeCliDetector] Checking auth status...");
 
     const envApiKey = process.env.ANTHROPIC_API_KEY;
-    console.log('[ClaudeCliDetector] Env ANTHROPIC_API_KEY:', !!envApiKey);
+    console.log("[ClaudeCliDetector] Env ANTHROPIC_API_KEY:", !!envApiKey);
 
     // Check app's stored credentials
     let storedOAuthToken = null;
@@ -237,38 +285,44 @@ class ClaudeCliDetector {
 
     if (appCredentialsPath && fs.existsSync(appCredentialsPath)) {
       try {
-        const content = fs.readFileSync(appCredentialsPath, 'utf-8');
+        const content = fs.readFileSync(appCredentialsPath, "utf-8");
         const credentials = JSON.parse(content);
         storedOAuthToken = credentials.anthropic_oauth_token || null;
-        storedApiKey = credentials.anthropic || credentials.anthropic_api_key || null;
-        console.log('[ClaudeCliDetector] App credentials:', {
+        storedApiKey =
+          credentials.anthropic || credentials.anthropic_api_key || null;
+        console.log("[ClaudeCliDetector] App credentials:", {
           hasOAuthToken: !!storedOAuthToken,
-          hasApiKey: !!storedApiKey
+          hasApiKey: !!storedApiKey,
         });
       } catch (error) {
-        console.error('[ClaudeCliDetector] Error reading app credentials:', error);
+        console.error(
+          "[ClaudeCliDetector] Error reading app credentials:",
+          error
+        );
       }
     }
 
     // Determine authentication method
     // Priority: Stored OAuth Token > Stored API Key > Env API Key
     let authenticated = false;
-    let method = 'none';
+    let method = "none";
 
     if (storedOAuthToken) {
       authenticated = true;
-      method = 'oauth_token';
-      console.log('[ClaudeCliDetector] Using stored OAuth token (subscription)');
+      method = "oauth_token";
+      console.log(
+        "[ClaudeCliDetector] Using stored OAuth token (subscription)"
+      );
     } else if (storedApiKey) {
       authenticated = true;
-      method = 'api_key';
-      console.log('[ClaudeCliDetector] Using stored API key');
+      method = "api_key";
+      console.log("[ClaudeCliDetector] Using stored API key");
     } else if (envApiKey) {
       authenticated = true;
-      method = 'api_key_env';
-      console.log('[ClaudeCliDetector] Using environment API key');
+      method = "api_key_env";
+      console.log("[ClaudeCliDetector] Using environment API key");
     } else {
-      console.log('[ClaudeCliDetector] No authentication found');
+      console.log("[ClaudeCliDetector] No authentication found");
     }
 
     const result = {
@@ -276,11 +330,25 @@ class ClaudeCliDetector {
       method,
       hasStoredOAuthToken: !!storedOAuthToken,
       hasStoredApiKey: !!storedApiKey,
-      hasEnvApiKey: !!envApiKey
+      hasEnvApiKey: !!envApiKey,
     };
 
-    console.log('[ClaudeCliDetector] Auth status result:', result);
+    console.log("[ClaudeCliDetector] Auth status result:", result);
     return result;
+  }
+  /**
+   * Get installation info (installation status only, no auth)
+   * @returns {Object} Installation info with status property
+   */
+  static getInstallationInfo() {
+    const installation = this.detectClaudeInstallation();
+    return {
+      status: installation.installed ? "installed" : "not_installed",
+      installed: installation.installed,
+      path: installation.path,
+      version: installation.version,
+      method: installation.method,
+    };
   }
 
   /**
@@ -294,12 +362,12 @@ class ClaudeCliDetector {
 
     return {
       success: true,
-      status: installation.installed ? 'installed' : 'not_installed',
+      status: installation.installed ? "installed" : "not_installed",
       installed: installation.installed,
       path: installation.path,
       version: installation.version,
       method: installation.method,
-      auth
+      auth,
     };
   }
 
@@ -309,9 +377,9 @@ class ClaudeCliDetector {
    */
   static getInstallCommands() {
     return {
-      macos: 'curl -fsSL https://claude.ai/install.sh | bash',
-      windows: 'irm https://claude.ai/install.ps1 | iex',
-      linux: 'curl -fsSL https://claude.ai/install.sh | bash'
+      macos: "curl -fsSL https://claude.ai/install.sh | bash",
+      windows: "irm https://claude.ai/install.ps1 | iex",
+      linux: "curl -fsSL https://claude.ai/install.sh | bash",
     };
   }
 
@@ -325,64 +393,69 @@ class ClaudeCliDetector {
       const platform = process.platform;
       let command, args;
 
-      if (platform === 'win32') {
-        command = 'powershell';
-        args = ['-Command', 'irm https://claude.ai/install.ps1 | iex'];
+      if (platform === "win32") {
+        command = "powershell";
+        args = ["-Command", "irm https://claude.ai/install.ps1 | iex"];
       } else {
-        command = 'bash';
-        args = ['-c', 'curl -fsSL https://claude.ai/install.sh | bash'];
+        command = "bash";
+        args = ["-c", "curl -fsSL https://claude.ai/install.sh | bash"];
       }
 
-      console.log('[ClaudeCliDetector] Installing Claude CLI...');
+      console.log("[ClaudeCliDetector] Installing Claude CLI...");
 
       const proc = spawn(command, args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        shell: false
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: false,
       });
 
-      let output = '';
-      let errorOutput = '';
+      let output = "";
+      let errorOutput = "";
 
-      proc.stdout.on('data', (data) => {
+      proc.stdout.on("data", (data) => {
         const text = data.toString();
         output += text;
         if (onProgress) {
-          onProgress({ type: 'stdout', data: text });
+          onProgress({ type: "stdout", data: text });
         }
       });
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on("data", (data) => {
         const text = data.toString();
         errorOutput += text;
         if (onProgress) {
-          onProgress({ type: 'stderr', data: text });
+          onProgress({ type: "stderr", data: text });
         }
       });
 
-      proc.on('close', (code) => {
+      proc.on("close", (code) => {
         if (code === 0) {
-          console.log('[ClaudeCliDetector] Installation completed successfully');
+          console.log(
+            "[ClaudeCliDetector] Installation completed successfully"
+          );
           resolve({
             success: true,
             output,
-            message: 'Claude CLI installed successfully'
+            message: "Claude CLI installed successfully",
           });
         } else {
-          console.error('[ClaudeCliDetector] Installation failed with code:', code);
+          console.error(
+            "[ClaudeCliDetector] Installation failed with code:",
+            code
+          );
           reject({
             success: false,
             error: errorOutput || `Installation failed with code ${code}`,
-            output
+            output,
           });
         }
       });
 
-      proc.on('error', (error) => {
-        console.error('[ClaudeCliDetector] Installation error:', error);
+      proc.on("error", (error) => {
+        console.error("[ClaudeCliDetector] Installation error:", error);
         reject({
           success: false,
           error: error.message,
-          output
+          output,
         });
       });
     });
@@ -398,22 +471,22 @@ class ClaudeCliDetector {
     if (!detection.installed) {
       return {
         success: false,
-        error: 'Claude CLI is not installed. Please install it first.',
-        installCommands: this.getInstallCommands()
+        error: "Claude CLI is not installed. Please install it first.",
+        installCommands: this.getInstallCommands(),
       };
     }
 
     return {
       success: true,
-      command: 'claude setup-token',
+      command: "claude setup-token",
       instructions: [
-        '1. Open your terminal',
-        '2. Run: claude setup-token',
-        '3. Follow the prompts to authenticate',
-        '4. Copy the token that is displayed',
-        '5. Paste the token in the field below'
+        "1. Open your terminal",
+        "2. Run: claude setup-token",
+        "3. Follow the prompts to authenticate",
+        "4. Copy the token that is displayed",
+        "5. Paste the token in the field below",
       ],
-      note: 'This token is from your Claude subscription and allows you to use Claude without API charges.'
+      note: "This token is from your Claude subscription and allows you to use Claude without API charges.",
     };
   }
 }

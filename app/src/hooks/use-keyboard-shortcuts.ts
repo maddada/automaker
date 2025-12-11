@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useCallback } from "react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore, parseShortcut } from "@/store/app-store";
 
 export interface KeyboardShortcut {
-  key: string;
+  key: string;  // Can be simple "K" or with modifiers "Shift+N", "Cmd+K"
   action: () => void;
   description?: string;
 }
@@ -60,8 +60,43 @@ function isInputFocused(): boolean {
 }
 
 /**
+ * Check if a keyboard event matches a shortcut definition
+ */
+function matchesShortcut(event: KeyboardEvent, shortcutStr: string): boolean {
+  const shortcut = parseShortcut(shortcutStr);
+
+  // Check if the key matches (case-insensitive)
+  if (event.key.toLowerCase() !== shortcut.key.toLowerCase()) {
+    return false;
+  }
+
+  // Check modifier keys
+  const cmdCtrlPressed = event.metaKey || event.ctrlKey;
+  const shiftPressed = event.shiftKey;
+  const altPressed = event.altKey;
+
+  // If shortcut requires cmdCtrl, it must be pressed
+  if (shortcut.cmdCtrl && !cmdCtrlPressed) return false;
+  // If shortcut doesn't require cmdCtrl, it shouldn't be pressed
+  if (!shortcut.cmdCtrl && cmdCtrlPressed) return false;
+
+  // If shortcut requires shift, it must be pressed
+  if (shortcut.shift && !shiftPressed) return false;
+  // If shortcut doesn't require shift, it shouldn't be pressed
+  if (!shortcut.shift && shiftPressed) return false;
+
+  // If shortcut requires alt, it must be pressed
+  if (shortcut.alt && !altPressed) return false;
+  // If shortcut doesn't require alt, it shouldn't be pressed
+  if (!shortcut.alt && altPressed) return false;
+
+  return true;
+}
+
+/**
  * Hook to manage keyboard shortcuts
  * Shortcuts won't fire when user is typing in inputs, textareas, or when dialogs are open
+ * Supports modifier keys: Shift, Cmd/Ctrl, Alt/Option
  */
 export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
   const handleKeyDown = useCallback(
@@ -71,14 +106,9 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
         return;
       }
 
-      // Don't trigger if any modifier keys are pressed (except for specific combos we want)
-      if (event.ctrlKey || event.altKey || event.metaKey) {
-        return;
-      }
-
       // Find matching shortcut
       const matchingShortcut = shortcuts.find(
-        (shortcut) => shortcut.key.toLowerCase() === event.key.toLowerCase()
+        (shortcut) => matchesShortcut(event, shortcut.key)
       );
 
       if (matchingShortcut) {

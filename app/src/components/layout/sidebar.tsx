@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore, formatShortcut } from "@/store/app-store";
 import {
   FolderOpen,
   Plus,
@@ -723,7 +723,7 @@ export function Sidebar() {
             className="ml-1 px-1 py-0.5 bg-brand-500/10 border border-brand-500/30 rounded text-[10px] font-mono text-brand-400/70"
             data-testid="sidebar-toggle-shortcut"
           >
-            {shortcuts.toggleSidebar}
+            {formatShortcut(shortcuts.toggleSidebar, true)}
           </span>
         </div>
       </button>
@@ -780,8 +780,8 @@ export function Sidebar() {
               data-testid="open-project-button"
             >
               <FolderOpen className="w-4 h-4 shrink-0" />
-              <span className="hidden lg:flex items-center justify-center w-5 h-5 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70 ml-2">
-                {shortcuts.openProject}
+              <span className="hidden lg:flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70 ml-2">
+                {formatShortcut(shortcuts.openProject, true)}
               </span>
             </button>
             <button
@@ -820,10 +820,10 @@ export function Sidebar() {
                   </div>
                   <div className="flex items-center gap-1">
                     <span
-                      className="hidden lg:flex items-center justify-center w-5 h-5 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70"
+                      className="hidden lg:flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70"
                       data-testid="project-picker-shortcut"
                     >
-                      {shortcuts.projectPicker}
+                      {formatShortcut(shortcuts.projectPicker, true)}
                     </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                   </div>
@@ -959,14 +959,14 @@ export function Sidebar() {
                         <Undo2 className="w-4 h-4 mr-2" />
                         <span className="flex-1">Previous</span>
                         <span className="text-[10px] font-mono text-muted-foreground ml-2">
-                          {shortcuts.cyclePrevProject}
+                          {formatShortcut(shortcuts.cyclePrevProject, true)}
                         </span>
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={cycleNextProject} data-testid="cycle-next-project">
                         <Redo2 className="w-4 h-4 mr-2" />
                         <span className="flex-1">Next</span>
                         <span className="text-[10px] font-mono text-muted-foreground ml-2">
-                          {shortcuts.cycleNextProject}
+                          {formatShortcut(shortcuts.cycleNextProject, true)}
                         </span>
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={clearProjectHistory} data-testid="clear-project-history">
@@ -1050,13 +1050,13 @@ export function Sidebar() {
                         {item.shortcut && sidebarOpen && (
                           <span
                             className={cn(
-                              "hidden lg:flex items-center justify-center w-5 h-5 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70",
+                              "hidden lg:flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70",
                               isActive &&
                                 "bg-brand-500/20 border-brand-500/50 text-brand-400"
                             )}
                             data-testid={`shortcut-${item.id}`}
                           >
-                            {item.shortcut}
+                            {formatShortcut(item.shortcut, true)}
                           </span>
                         )}
                         {/* Tooltip for collapsed state */}
@@ -1116,13 +1116,13 @@ export function Sidebar() {
             {sidebarOpen && (
               <span
                 className={cn(
-                  "hidden lg:flex items-center justify-center w-5 h-5 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70",
+                  "hidden lg:flex items-center justify-center min-w-5 h-5 px-1 text-[10px] font-mono rounded bg-brand-500/10 border border-brand-500/30 text-brand-400/70",
                   isActiveRoute("settings") &&
                     "bg-brand-500/20 border-brand-500/50 text-brand-400"
                 )}
                 data-testid="shortcut-settings"
               >
-                {shortcuts.settings}
+                {formatShortcut(shortcuts.settings, true)}
               </span>
             )}
             {!sidebarOpen && (
