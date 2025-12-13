@@ -2,18 +2,26 @@
 
 The integrated terminal provides a full-featured terminal emulator within Automaker, powered by xterm.js.
 
-## Unlocking the Terminal
+## Configuration
 
-The terminal is password-protected by default. To unlock:
+Configure the terminal via environment variables in `apps/server/.env`:
 
-1. Go to **Settings** (gear icon in sidebar)
-2. Navigate to the **Terminal** section
-3. Enter your password and click **Unlock**
+### Disable Terminal Completely
+```
+TERMINAL_ENABLED=false
+```
+Set to `false` to completely disable the terminal feature.
 
-To disable password protection entirely:
-1. Unlock the terminal first
-2. Toggle off **Require password to unlock terminal**
-3. The terminal will now be accessible without a password
+### Password Protection
+```
+TERMINAL_PASSWORD=yourpassword
+```
+By default, the terminal is **not password protected**. Add this variable to require a password.
+
+When password protection is enabled:
+- Enter the password in **Settings > Terminal** to unlock
+- The terminal remains unlocked for the session
+- You can toggle password requirement on/off in settings after unlocking
 
 ## Keyboard Shortcuts
 
