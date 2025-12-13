@@ -1605,7 +1605,8 @@ export const useAppStore = create<AppState & AppActions>()(
         if (current.tabs.length === 0) return;
 
         // Find which tab contains this session
-        const findFirstTerminal = (node: TerminalPanelContent): string | null => {
+        const findFirstTerminal = (node: TerminalPanelContent | null): string | null => {
+          if (!node) return null;
           if (node.type === "terminal") return node.sessionId;
           for (const panel of node.panels) {
             const found = findFirstTerminal(panel);
@@ -1640,7 +1641,7 @@ export const useAppStore = create<AppState & AppActions>()(
         // Determine new active session
         const newActiveTabId = newTabs.length > 0 ? (current.activeTabId && newTabs.find(t => t.id === current.activeTabId) ? current.activeTabId : newTabs[0].id) : null;
         const newActiveSessionId = newActiveTabId
-          ? findFirstTerminal(newTabs.find(t => t.id === newActiveTabId)?.layout || null as unknown as TerminalPanelContent)
+          ? findFirstTerminal(newTabs.find(t => t.id === newActiveTabId)?.layout || null)
           : null;
 
         set({

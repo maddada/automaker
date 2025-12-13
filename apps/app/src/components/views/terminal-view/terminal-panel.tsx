@@ -59,6 +59,7 @@ export function TerminalPanel({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isTerminalReady, setIsTerminalReady] = useState(false);
+  const [shellName, setShellName] = useState("shell");
 
   // Get effective theme from store
   const getEffectiveTheme = useAppStore((state) => state.getEffectiveTheme);
@@ -223,6 +224,11 @@ export function TerminalPanel({
               break;
             case "connected":
               console.log(`[Terminal] Session connected: ${msg.shell} in ${msg.cwd}`);
+              if (msg.shell) {
+                // Extract shell name from path (e.g., "/bin/bash" -> "bash")
+                const name = msg.shell.split("/").pop() || msg.shell;
+                setShellName(name);
+              }
               break;
             case "exit":
               terminal.write(`\r\n\x1b[33m[Process exited with code ${msg.exitCode}]\x1b[0m\r\n`);
@@ -462,7 +468,7 @@ export function TerminalPanel({
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <Terminal className="h-3 w-3 shrink-0 text-muted-foreground" />
           <span className="text-xs truncate text-foreground">
-            bash
+            {shellName}
           </span>
           {/* Font size indicator - only show when not default */}
           {fontSize !== DEFAULT_FONT_SIZE && (
