@@ -19,7 +19,7 @@ import {
   FeatureImagePath as DescriptionImagePath,
   ImagePreviewMap,
 } from "@/components/ui/description-image-dropzone";
-import { MessageSquare, Settings2, FlaskConical, Sparkles, ChevronDown } from "lucide-react";
+import { MessageSquare, Settings2, FlaskConical, Sparkles, ChevronDown, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { getElectronAPI } from "@/lib/electron";
 import { modelSupportsThinking } from "@/lib/utils";
@@ -43,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DependencyTreeDialog } from "./dependency-tree-dialog";
 
 interface EditFeatureDialogProps {
   feature: Feature | null;
@@ -83,6 +84,7 @@ export function EditFeatureDialog({
   const [showEditAdvancedOptions, setShowEditAdvancedOptions] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [enhancementMode, setEnhancementMode] = useState<'improve' | 'technical' | 'simplify' | 'acceptance'>('improve');
+  const [showDependencyTree, setShowDependencyTree] = useState(false);
 
   // Get enhancement model from store
   const { enhancementModel } = useAppStore();
