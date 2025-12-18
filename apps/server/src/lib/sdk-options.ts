@@ -164,6 +164,10 @@ export function createSpecGenerationOptions(
 ): Options {
   return {
     ...getBaseOptions(),
+    // Override permissionMode - spec generation only needs read-only tools
+    // Using "acceptEdits" can cause Claude to write files to unexpected locations
+    // See: https://github.com/AutoMaker-Org/automaker/issues/149
+    permissionMode: "default",
     model: getModelForUseCase("spec", config.model),
     maxTurns: MAX_TURNS.maximum,
     cwd: config.cwd,
@@ -186,6 +190,8 @@ export function createFeatureGenerationOptions(
 ): Options {
   return {
     ...getBaseOptions(),
+    // Override permissionMode - feature generation only needs read-only tools
+    permissionMode: "default",
     model: getModelForUseCase("features", config.model),
     maxTurns: MAX_TURNS.quick,
     cwd: config.cwd,

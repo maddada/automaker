@@ -63,10 +63,11 @@ export function getAppSpecFormatInstruction(): string {
 ${APP_SPEC_XML_FORMAT}
 
 CRITICAL FORMATTING REQUIREMENTS:
+- Do NOT use the Write, Edit, or Bash tools to create files - just OUTPUT the XML in your response
 - Your ENTIRE response MUST be valid XML following the exact template structure above
 - Do NOT use markdown formatting (no # headers, no **bold**, no - lists, etc.)
 - Do NOT include any explanatory text, prefix, or suffix outside the XML tags
-- Do NOT include phrases like "Based on my analysis..." or "I'll create..." before the XML
+- Do NOT include phrases like "Based on my analysis...", "I'll create...", "Let me analyze..." before the XML
 - Do NOT include any text before <project_specification> or after </project_specification>
 - Your response must start IMMEDIATELY with <project_specification> with no preceding text
 - Your response must end IMMEDIATELY with </project_specification> with no following text

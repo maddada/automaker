@@ -38,11 +38,13 @@ export async function generateSpec(
 
   if (analyzeProject !== false) {
     // Default to true - analyze the project
-    analysisInstructions = `Based on this overview, analyze the project directory (if it exists) and create a comprehensive specification. Use the Read, Glob, and Grep tools to explore the codebase and understand:
+    analysisInstructions = `Based on this overview, analyze the project directory (if it exists) using the Read, Glob, and Grep tools to understand:
 - Existing technologies and frameworks
 - Project structure and architecture
 - Current features and capabilities
-- Code patterns and conventions`;
+- Code patterns and conventions
+
+After your analysis, OUTPUT the complete XML specification in your response. Do NOT attempt to write any files - just return the XML content and it will be saved automatically.`;
   } else {
     // Use default tech stack
     techStackDefaults = `Default Technology Stack:
@@ -52,7 +54,9 @@ export async function generateSpec(
 - Styling: Tailwind CSS
 - Frontend: React
 
-Use these technologies as the foundation for the specification.`;
+Use these technologies as the foundation for the specification.
+
+OUTPUT the complete XML specification in your response. Do NOT attempt to write any files - just return the XML content and it will be saved automatically.`;
   }
 
   const prompt = `You are helping to define a software project specification.
@@ -163,17 +167,14 @@ ${getAppSpecFormatInstruction()}`;
         }
       } else if (msg.type === "result" && (msg as any).subtype === "success") {
         logger.info("Received success result");
-        logger.info(`Result value: "${(msg as any).result}"`);
+        logger.info(`Result value length: ${((msg as any).result || "").length}`);
         logger.info(
-          `Current responseText length before result: ${responseText.length}`
+          `Final accumulated responseText length: ${responseText.length}`
         );
-        // Only use result if it has content, otherwise keep accumulated text
-        if ((msg as any).result && (msg as any).result.length > 0) {
-          logger.info("Using result value as responseText");
-          responseText = (msg as any).result;
-        } else {
-          logger.info("Result is empty, keeping accumulated responseText");
-        }
+        // Don't overwrite responseText - the accumulated text contains the XML spec
+        // The result.result field contains Claude's conversational summary (e.g., "I've created the spec...")
+        // which is NOT what we want to save to app_spec.txt
+        // See: https://github.com/AutoMaker-Org/automaker/issues/149
       } else if (msg.type === "result") {
         // Handle all result types
         const subtype = (msg as any).subtype;
@@ -210,14 +211,30 @@ ${getAppSpecFormatInstruction()}`;
     logger.error("❌ WARNING: responseText is empty! Nothing to save.");
   }
 
+  // Extract XML content from response - Claude might include conversational text before/after
+  // See: https://github.com/AutoMaker-Org/automaker/issues/149
+  let xmlContent = responseText;
+  const xmlStart = responseText.indexOf("<project_specification>");
+  const xmlEnd = responseText.lastIndexOf("</project_specification>");
+
+  if (xmlStart !== -1 && xmlEnd !== -1) {
+    // Extract just the XML content
+    xmlContent = responseText.substring(xmlStart, xmlEnd + "</project_specification>".length);
+    logger.info(`Extracted XML content: ${xmlContent.length} chars (from position ${xmlStart})`);
+  } else if (xmlStart === -1) {
+    logger.warn("⚠️ Response does not contain <project_specification> tag - saving raw response");
+  } else {
+    logger.warn("⚠️ Response has incomplete XML (missing closing tag) - saving raw response");
+  }
+
   // Save spec to .automaker directory
   const specDir = await ensureAutomakerDir(projectPath);
   const specPath = getAppSpecPath(projectPath);
 
   logger.info("Saving spec to:", specPath);
-  logger.info(`Content to save (${responseText.length} chars)`);
+  logger.info(`Content to save (${xmlContent.length} chars)`);
 
-  await fs.writeFile(specPath, responseText);
+  await fs.writeFile(specPath, xmlContent);
 
   // Verify the file was written
   const savedContent = await fs.readFile(specPath, "utf-8");
