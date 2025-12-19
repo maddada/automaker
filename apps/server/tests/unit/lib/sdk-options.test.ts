@@ -40,9 +40,9 @@ describe("sdk-options.ts", () => {
   describe("MAX_TURNS", () => {
     it("should export turn presets", async () => {
       const { MAX_TURNS } = await import("@/lib/sdk-options.js");
-      expect(MAX_TURNS.quick).toBe(5);
-      expect(MAX_TURNS.standard).toBe(20);
-      expect(MAX_TURNS.extended).toBe(50);
+      expect(MAX_TURNS.quick).toBe(50);
+      expect(MAX_TURNS.standard).toBe(100);
+      expect(MAX_TURNS.extended).toBe(250);
       expect(MAX_TURNS.maximum).toBe(1000);
     });
   });
@@ -88,7 +88,7 @@ describe("sdk-options.ts", () => {
       expect(options.cwd).toBe("/test/path");
       expect(options.maxTurns).toBe(MAX_TURNS.maximum);
       expect(options.allowedTools).toEqual([...TOOL_PRESETS.specGeneration]);
-      expect(options.permissionMode).toBe("acceptEdits");
+      expect(options.permissionMode).toBe("default");
     });
 
     it("should include system prompt when provided", async () => {
@@ -141,7 +141,7 @@ describe("sdk-options.ts", () => {
       const options = createSuggestionsOptions({ cwd: "/test/path" });
 
       expect(options.cwd).toBe("/test/path");
-      expect(options.maxTurns).toBe(MAX_TURNS.quick);
+      expect(options.maxTurns).toBe(MAX_TURNS.extended);
       expect(options.allowedTools).toEqual([...TOOL_PRESETS.readOnly]);
     });
   });

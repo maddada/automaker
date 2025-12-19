@@ -5,13 +5,17 @@
 import { createLogger } from "../../lib/logger.js";
 import { exec } from "child_process";
 import { promisify } from "util";
+import path from "path";
+import fs from "fs/promises";
 import {
   getErrorMessage as getErrorMessageShared,
   createLogError,
 } from "../common.js";
+import { FeatureLoader } from "../../services/feature-loader.js";
 
 const logger = createLogger("Worktree");
 const execAsync = promisify(exec);
+const featureLoader = new FeatureLoader();
 
 export const AUTOMAKER_INITIAL_COMMIT_MESSAGE =
   "chore: automaker initial commit";

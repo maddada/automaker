@@ -9,6 +9,39 @@ import { createSuggestionsOptions } from "../../lib/sdk-options.js";
 
 const logger = createLogger("Suggestions");
 
+/**
+ * JSON Schema for suggestions output
+ */
+const suggestionsSchema = {
+  type: "object",
+  properties: {
+    suggestions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          category: { type: "string" },
+          description: { type: "string" },
+          steps: {
+            type: "array",
+            items: { type: "string" },
+          },
+          priority: { 
+            type: "number",
+            minimum: 1,
+            maximum: 3,
+          },
+          reasoning: { type: "string" },
+        },
+        required: ["category", "description", "steps", "priority", "reasoning"],
+      },
+    },
+  },
+  required: ["suggestions"],
+  additionalProperties: false,
+};
+
 export async function generateSuggestions(
   projectPath: string,
   suggestionType: string,
@@ -36,19 +69,7 @@ For each suggestion, provide:
 4. Priority (1=high, 2=medium, 3=low)
 5. Brief reasoning for why this would help
 
-Format your response as JSON:
-{
-  "suggestions": [
-    {
-      "id": "suggestion-123",
-      "category": "Category",
-      "description": "What to implement",
-      "steps": ["Step 1", "Step 2"],
-      "priority": 1,
-      "reasoning": "Why this helps"
-    }
-  ]
-}`;
+The response will be automatically formatted as structured JSON.`;
 
   events.emit("suggestions:event", {
     type: "suggestions_progress",
@@ -58,16 +79,21 @@ Format your response as JSON:
   const options = createSuggestionsOptions({
     cwd: projectPath,
     abortController,
+    outputFormat: {
+      type: "json_schema",
+      schema: suggestionsSchema,
+    },
   });
 
   const stream = query({ prompt, options });
   let responseText = "";
+  let structuredOutput: { suggestions: Array<Record<string, unknown>> } | null = null;
 
   for await (const msg of stream) {
     if (msg.type === "assistant" && msg.message.content) {
       for (const block of msg.message.content) {
         if (block.type === "text") {
-          responseText = block.text;
+          responseText += block.text;
           events.emit("suggestions:event", {
             type: "suggestions_progress",
             content: block.text,
@@ -81,18 +107,34 @@ Format your response as JSON:
         }
       }
     } else if (msg.type === "result" && msg.subtype === "success") {
-      responseText = msg.result || responseText;
+      // Check for structured output
+      const resultMsg = msg as any;
+      if (resultMsg.structured_output) {
+        structuredOutput = resultMsg.structured_output as {
+          suggestions: Array<Record<string, unknown>>;
+        };
+        logger.debug("Received structured output:", structuredOutput);
+      }
+    } else if (msg.type === "result") {
+      const resultMsg = msg as any;
+      if (resultMsg.subtype === "error_max_structured_output_retries") {
+        logger.error("Failed to produce valid structured output after retries");
+        throw new Error("Could not produce valid suggestions output");
+      } else if (resultMsg.subtype === "error_max_turns") {
+        logger.error("Hit max turns limit before completing suggestions generation");
+        logger.warn(`Response text length: ${responseText.length} chars`);
+        // Still try to parse what we have
+      }
     }
   }
 
-  // Parse suggestions from response
+  // Use structured output if available, otherwise fall back to parsing text
   try {
-    const jsonMatch = responseText.match(/\{[\s\S]*"suggestions"[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+    if (structuredOutput && structuredOutput.suggestions) {
+      // Use structured output directly
       events.emit("suggestions:event", {
         type: "suggestions_complete",
-        suggestions: parsed.suggestions.map(
+        suggestions: structuredOutput.suggestions.map(
           (s: Record<string, unknown>, i: number) => ({
             ...s,
             id: s.id || `suggestion-${Date.now()}-${i}`,
@@ -100,7 +142,23 @@ Format your response as JSON:
         ),
       });
     } else {
-      throw new Error("No valid JSON found in response");
+      // Fallback: try to parse from text (for backwards compatibility)
+      logger.warn("No structured output received, attempting to parse from text");
+      const jsonMatch = responseText.match(/\{[\s\S]*"suggestions"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        events.emit("suggestions:event", {
+          type: "suggestions_complete",
+          suggestions: parsed.suggestions.map(
+            (s: Record<string, unknown>, i: number) => ({
+              ...s,
+              id: s.id || `suggestion-${Date.now()}-${i}`,
+            })
+          ),
+        });
+      } else {
+        throw new Error("No valid JSON found in response");
+      }
     }
   } catch (error) {
     // Log the parsing error for debugging

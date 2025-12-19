@@ -284,14 +284,14 @@ async function main() {
     });
   }
 
-  // Install Playwright browsers from apps/app where @playwright/test is installed
+  // Install Playwright browsers from apps/ui where @playwright/test is installed
   log('Checking Playwright browsers...', 'yellow');
   try {
     await new Promise((resolve) => {
       const playwright = crossSpawn(
         'npx',
         ['playwright', 'install', 'chromium'],
-        { stdio: 'ignore', cwd: path.join(__dirname, 'apps', 'app') }
+        { stdio: 'ignore', cwd: path.join(__dirname, 'apps', 'ui') }
       );
       playwright.on('close', () => resolve());
       playwright.on('error', () => resolve());

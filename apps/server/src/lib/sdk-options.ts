@@ -58,13 +58,13 @@ export const TOOL_PRESETS = {
  */
 export const MAX_TURNS = {
   /** Quick operations that shouldn't need many iterations */
-  quick: 5,
+  quick: 50,
 
   /** Standard operations */
-  standard: 20,
+  standard: 100,
 
   /** Long-running operations like full spec generation */
-  extended: 50,
+  extended: 250,
 
   /** Very long operations that may require extensive exploration */
   maximum: 1000,
@@ -143,6 +143,12 @@ export interface CreateSdkOptionsConfig {
 
   /** Optional abort controller for cancellation */
   abortController?: AbortController;
+
+  /** Optional output format for structured outputs */
+  outputFormat?: {
+    type: "json_schema";
+    schema: Record<string, unknown>;
+  };
 }
 
 /**
@@ -158,12 +164,17 @@ export function createSpecGenerationOptions(
 ): Options {
   return {
     ...getBaseOptions(),
+    // Override permissionMode - spec generation only needs read-only tools
+    // Using "acceptEdits" can cause Claude to write files to unexpected locations
+    // See: https://github.com/AutoMaker-Org/automaker/issues/149
+    permissionMode: "default",
     model: getModelForUseCase("spec", config.model),
     maxTurns: MAX_TURNS.maximum,
     cwd: config.cwd,
     allowedTools: [...TOOL_PRESETS.specGeneration],
     ...(config.systemPrompt && { systemPrompt: config.systemPrompt }),
     ...(config.abortController && { abortController: config.abortController }),
+    ...(config.outputFormat && { outputFormat: config.outputFormat }),
   };
 }
 
@@ -180,6 +191,8 @@ export function createFeatureGenerationOptions(
 ): Options {
   return {
     ...getBaseOptions(),
+    // Override permissionMode - feature generation only needs read-only tools
+    permissionMode: "default",
     model: getModelForUseCase("features", config.model),
     maxTurns: MAX_TURNS.quick,
     cwd: config.cwd,
@@ -194,7 +207,7 @@ export function createFeatureGenerationOptions(
  *
  * Configuration:
  * - Uses read-only tools for analysis
- * - Quick turns for focused suggestions
+ * - Standard turns to allow thorough codebase exploration and structured output generation
  * - Opus model by default for thorough analysis
  */
 export function createSuggestionsOptions(
@@ -203,11 +216,12 @@ export function createSuggestionsOptions(
   return {
     ...getBaseOptions(),
     model: getModelForUseCase("suggestions", config.model),
-    maxTurns: MAX_TURNS.quick,
+    maxTurns: MAX_TURNS.extended,
     cwd: config.cwd,
     allowedTools: [...TOOL_PRESETS.readOnly],
     ...(config.systemPrompt && { systemPrompt: config.systemPrompt }),
     ...(config.abortController && { abortController: config.abortController }),
+    ...(config.outputFormat && { outputFormat: config.outputFormat }),
   };
 }
 

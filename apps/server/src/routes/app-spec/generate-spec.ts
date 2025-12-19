@@ -6,7 +6,12 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import path from "path";
 import fs from "fs/promises";
 import type { EventEmitter } from "../../lib/events.js";
-import { getAppSpecFormatInstruction } from "../../lib/app-spec-format.js";
+import {
+  specOutputSchema,
+  specToXml,
+  getStructuredSpecPromptInstruction,
+  type SpecOutput,
+} from "../../lib/app-spec-format.js";
 import { createLogger } from "../../lib/logger.js";
 import { createSpecGenerationOptions } from "../../lib/sdk-options.js";
 import { logAuthStatus } from "./common.js";
@@ -38,7 +43,7 @@ export async function generateSpec(
 
   if (analyzeProject !== false) {
     // Default to true - analyze the project
-    analysisInstructions = `Based on this overview, analyze the project directory (if it exists) and create a comprehensive specification. Use the Read, Glob, and Grep tools to explore the codebase and understand:
+    analysisInstructions = `Based on this overview, analyze the project directory (if it exists) using the Read, Glob, and Grep tools to understand:
 - Existing technologies and frameworks
 - Project structure and architecture
 - Current features and capabilities
@@ -66,7 +71,7 @@ ${techStackDefaults}
 
 ${analysisInstructions}
 
-${getAppSpecFormatInstruction()}`;
+${getStructuredSpecPromptInstruction()}`;
 
   logger.info("========== PROMPT BEING SENT ==========");
   logger.info(`Prompt length: ${prompt.length} chars`);
@@ -81,6 +86,10 @@ ${getAppSpecFormatInstruction()}`;
   const options = createSpecGenerationOptions({
     cwd: projectPath,
     abortController,
+    outputFormat: {
+      type: "json_schema",
+      schema: specOutputSchema,
+    },
   });
 
   logger.debug("SDK Options:", JSON.stringify(options, null, 2));
@@ -101,6 +110,7 @@ ${getAppSpecFormatInstruction()}`;
 
   let responseText = "";
   let messageCount = 0;
+  let structuredOutput: SpecOutput | null = null;
 
   logger.info("Starting to iterate over stream...");
 
@@ -114,75 +124,49 @@ ${getAppSpecFormatInstruction()}`;
       );
 
       if (msg.type === "assistant") {
-        // Log the full message structure to debug
-        logger.info(`Assistant msg keys: ${Object.keys(msg).join(", ")}`);
         const msgAny = msg as any;
-        if (msgAny.message) {
-          logger.info(
-            `msg.message keys: ${Object.keys(msgAny.message).join(", ")}`
-          );
-          if (msgAny.message.content) {
-            logger.info(
-              `msg.message.content length: ${msgAny.message.content.length}`
-            );
-            for (const block of msgAny.message.content) {
+        if (msgAny.message?.content) {
+          for (const block of msgAny.message.content) {
+            if (block.type === "text") {
+              responseText += block.text;
               logger.info(
-                `Block keys: ${Object.keys(block).join(", ")}, type: ${
-                  block.type
-                }`
+                `Text block received (${block.text.length} chars), total now: ${responseText.length} chars`
               );
-              if (block.type === "text") {
-                responseText += block.text;
-                logger.info(
-                  `Text block received (${block.text.length} chars), total now: ${responseText.length} chars`
-                );
-                logger.info(`Text preview: ${block.text.substring(0, 200)}...`);
-                events.emit("spec-regeneration:event", {
-                  type: "spec_regeneration_progress",
-                  content: block.text,
-                  projectPath: projectPath,
-                });
-              } else if (block.type === "tool_use") {
-                logger.info("Tool use:", block.name);
-                events.emit("spec-regeneration:event", {
-                  type: "spec_tool",
-                  tool: block.name,
-                  input: block.input,
-                });
-              }
+              events.emit("spec-regeneration:event", {
+                type: "spec_regeneration_progress",
+                content: block.text,
+                projectPath: projectPath,
+              });
+            } else if (block.type === "tool_use") {
+              logger.info("Tool use:", block.name);
+              events.emit("spec-regeneration:event", {
+                type: "spec_tool",
+                tool: block.name,
+                input: block.input,
+              });
             }
-          } else {
-            logger.warn("msg.message.content is falsy");
           }
-        } else {
-          logger.warn("msg.message is falsy");
-          // Log full message to see structure
-          logger.info(
-            `Full assistant msg: ${JSON.stringify(msg).substring(0, 1000)}`
-          );
         }
       } else if (msg.type === "result" && (msg as any).subtype === "success") {
         logger.info("Received success result");
-        logger.info(`Result value: "${(msg as any).result}"`);
-        logger.info(
-          `Current responseText length before result: ${responseText.length}`
-        );
-        // Only use result if it has content, otherwise keep accumulated text
-        if ((msg as any).result && (msg as any).result.length > 0) {
-          logger.info("Using result value as responseText");
-          responseText = (msg as any).result;
+        // Check for structured output - this is the reliable way to get spec data
+        const resultMsg = msg as any;
+        if (resultMsg.structured_output) {
+          structuredOutput = resultMsg.structured_output as SpecOutput;
+          logger.info("✅ Received structured output");
+          logger.debug("Structured output:", JSON.stringify(structuredOutput, null, 2));
         } else {
-          logger.info("Result is empty, keeping accumulated responseText");
+          logger.warn("⚠️ No structured output in result, will fall back to text parsing");
         }
       } else if (msg.type === "result") {
-        // Handle all result types
+        // Handle error result types
         const subtype = (msg as any).subtype;
         logger.info(`Result message: subtype=${subtype}`);
         if (subtype === "error_max_turns") {
-          logger.error(
-            "❌ Hit max turns limit! Claude used too many tool calls."
-          );
-          logger.info(`responseText so far: ${responseText.length} chars`);
+          logger.error("❌ Hit max turns limit!");
+        } else if (subtype === "error_max_structured_output_retries") {
+          logger.error("❌ Failed to produce valid structured output after retries");
+          throw new Error("Could not produce valid spec output");
         }
       } else if ((msg as { type: string }).type === "error") {
         logger.error("❌ Received error message from stream:");
@@ -202,22 +186,58 @@ ${getAppSpecFormatInstruction()}`;
 
   logger.info(`Stream iteration complete. Total messages: ${messageCount}`);
   logger.info(`Response text length: ${responseText.length} chars`);
-  logger.info("========== FINAL RESPONSE TEXT ==========");
-  logger.info(responseText || "(empty)");
-  logger.info("========== END RESPONSE TEXT ==========");
 
-  if (!responseText || responseText.trim().length === 0) {
-    logger.error("❌ WARNING: responseText is empty! Nothing to save.");
+  // Determine XML content to save
+  let xmlContent: string;
+
+  if (structuredOutput) {
+    // Use structured output - convert JSON to XML
+    logger.info("✅ Using structured output for XML generation");
+    xmlContent = specToXml(structuredOutput);
+    logger.info(`Generated XML from structured output: ${xmlContent.length} chars`);
+  } else {
+    // Fallback: Extract XML content from response text
+    // Claude might include conversational text before/after
+    // See: https://github.com/AutoMaker-Org/automaker/issues/149
+    logger.warn("⚠️ No structured output, falling back to text parsing");
+    logger.info("========== FINAL RESPONSE TEXT ==========");
+    logger.info(responseText || "(empty)");
+    logger.info("========== END RESPONSE TEXT ==========");
+
+    if (!responseText || responseText.trim().length === 0) {
+      throw new Error("No response text and no structured output - cannot generate spec");
+    }
+
+    const xmlStart = responseText.indexOf("<project_specification>");
+    const xmlEnd = responseText.lastIndexOf("</project_specification>");
+
+    if (xmlStart !== -1 && xmlEnd !== -1) {
+      // Extract just the XML content, discarding any conversational text before/after
+      xmlContent = responseText.substring(xmlStart, xmlEnd + "</project_specification>".length);
+      logger.info(`Extracted XML content: ${xmlContent.length} chars (from position ${xmlStart})`);
+    } else {
+      // No valid XML structure found in the response text
+      // This happens when structured output was expected but not received, and the agent
+      // output conversational text instead of XML (e.g., "The project directory appears to be empty...")
+      // We should NOT save this conversational text as it's not a valid spec
+      logger.error("❌ Response does not contain valid <project_specification> XML structure");
+      logger.error("This typically happens when structured output failed and the agent produced conversational text instead of XML");
+      throw new Error(
+        "Failed to generate spec: No valid XML structure found in response. " +
+        "The response contained conversational text but no <project_specification> tags. " +
+        "Please try again."
+      );
+    }
   }
 
   // Save spec to .automaker directory
-  const specDir = await ensureAutomakerDir(projectPath);
+  await ensureAutomakerDir(projectPath);
   const specPath = getAppSpecPath(projectPath);
 
   logger.info("Saving spec to:", specPath);
-  logger.info(`Content to save (${responseText.length} chars)`);
+  logger.info(`Content to save (${xmlContent.length} chars)`);
 
-  await fs.writeFile(specPath, responseText);
+  await fs.writeFile(specPath, xmlContent);
 
   // Verify the file was written
   const savedContent = await fs.readFile(specPath, "utf-8");

@@ -23,7 +23,7 @@ import { isAbortError, classifyError } from "../lib/error-handler.js";
 import { resolveDependencies, areDependenciesSatisfied } from "../lib/dependency-resolver.js";
 import type { Feature } from "./feature-loader.js";
 import { FeatureLoader } from "./feature-loader.js";
-import { getFeatureDir, getAutomakerDir, getFeaturesDir } from "../lib/automaker-paths.js";
+import { getFeatureDir, getAutomakerDir, getFeaturesDir, getContextDir } from "../lib/automaker-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -558,6 +558,9 @@ export class AutoModeService {
 
       // Build the prompt - use continuation prompt if provided (for recovery after plan approval)
       let prompt: string;
+      // Load project context files (CLAUDE.md, CODE_QUALITY.md, etc.) - passed as system prompt
+      const contextFiles = await this.loadContextFiles(projectPath);
+
       if (options?.continuationPrompt) {
         // Continuation prompt is used when recovering from a plan approval
         // The plan was already approved, so skip the planning phase
@@ -591,6 +594,7 @@ export class AutoModeService {
       );
 
       // Run the agent with the feature's model and images
+      // Context files are passed as system prompt for higher priority
       await this.runAgent(
         workDir,
         featureId,
@@ -603,6 +607,7 @@ export class AutoModeService {
           projectPath,
           planningMode: feature.planningMode,
           requirePlanApproval: feature.requirePlanApproval,
+          systemPrompt: contextFiles || undefined,
         }
       );
 
@@ -755,6 +760,9 @@ export class AutoModeService {
       // No previous context
     }
 
+    // Load project context files (CLAUDE.md, CODE_QUALITY.md, etc.) - passed as system prompt
+    const contextFiles = await this.loadContextFiles(projectPath);
+
     // Build complete prompt with feature info, previous context, and follow-up instructions
     let fullPrompt = `## Follow-up on Feature Implementation
 
@@ -873,6 +881,7 @@ Address the follow-up instructions above. Review the previous work and make the 
       // Use fullPrompt (already built above) with model and all images
       // Note: Follow-ups skip planning mode - they continue from previous work
       // Pass previousContext so the history is preserved in the output file
+      // Context files are passed as system prompt for higher priority
       await this.runAgent(
         workDir,
         featureId,
@@ -885,6 +894,7 @@ Address the follow-up instructions above. Review the previous work and make the 
           projectPath,
           planningMode: 'skip', // Follow-ups don't require approval
           previousContent: previousContext || undefined,
+          systemPrompt: contextFiles || undefined,
         }
       );
 
@@ -1080,6 +1090,65 @@ Address the follow-up instructions above. Review the previous work and make the 
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Load context files from .automaker/context/ directory
+   * These are user-defined context files (CLAUDE.md, CODE_QUALITY.md, etc.)
+   * that provide project-specific rules and guidelines for the agent.
+   */
+  private async loadContextFiles(projectPath: string): Promise<string> {
+    // Use path.resolve for cross-platform absolute path handling
+    const contextDir = path.resolve(getContextDir(projectPath));
+
+    try {
+      // Check if directory exists first
+      await fs.access(contextDir);
+
+      const files = await fs.readdir(contextDir);
+      // Filter for text-based context files (case-insensitive for Windows)
+      const textFiles = files.filter((f) => {
+        const lower = f.toLowerCase();
+        return lower.endsWith(".md") || lower.endsWith(".txt");
+      });
+
+      if (textFiles.length === 0) return "";
+
+      const contents: string[] = [];
+      for (const file of textFiles) {
+        // Use path.join for cross-platform path construction
+        const filePath = path.join(contextDir, file);
+        const content = await fs.readFile(filePath, "utf-8");
+        contents.push(`## ${file}\n\n${content}`);
+      }
+
+      console.log(
+        `[AutoMode] Loaded ${textFiles.length} context file(s): ${textFiles.join(", ")}`
+      );
+
+      return `# ⚠️ CRITICAL: Project Context Files - READ AND FOLLOW STRICTLY
+
+**IMPORTANT**: The following context files contain MANDATORY project-specific rules and conventions. You MUST:
+1. Read these rules carefully before taking any action
+2. Follow ALL commands exactly as shown (e.g., if the project uses \`pnpm\`, NEVER use \`npm\` or \`npx\`)
+3. Follow ALL coding conventions, commit message formats, and architectural patterns specified
+4. Reference these rules before running ANY shell commands or making commits
+
+Failure to follow these rules will result in broken builds, failed CI, and rejected commits.
+
+${contents.join("\n\n---\n\n")}
+
+---
+
+**REMINDER**: Before running any command, verify you are using the correct package manager and following the conventions above.
+
+---
+
+`;
+    } catch {
+      // Context directory doesn't exist or is empty - this is fine
+      return "";
     }
   }
 
@@ -1676,6 +1745,7 @@ This helps parse your summary correctly in the output logs.`;
       planningMode?: PlanningMode;
       requirePlanApproval?: boolean;
       previousContent?: string;
+      systemPrompt?: string;
     }
   ): Promise<void> {
     const finalProjectPath = options?.projectPath || projectPath;
@@ -1783,6 +1853,13 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       false // don't duplicate paths in text
     );
 
+    // Debug: Log if system prompt is provided
+    if (options?.systemPrompt) {
+      console.log(
+        `[AutoMode] System prompt provided (${options.systemPrompt.length} chars), first 200 chars:\n${options.systemPrompt.substring(0, 200)}...`
+      );
+    }
+
     const executeOptions: ExecuteOptions = {
       prompt: promptContent,
       model: finalModel,
@@ -1790,6 +1867,7 @@ This mock response was generated because AUTOMAKER_MOCK_AGENT=true was set.
       cwd: workDir,
       allowedTools: allowedTools,
       abortController,
+      systemPrompt: options?.systemPrompt,
     };
 
     // Execute via provider

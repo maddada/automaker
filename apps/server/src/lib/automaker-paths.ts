@@ -54,6 +54,13 @@ export function getImagesDir(projectPath: string): string {
 }
 
 /**
+ * Get the context files directory for a project (user-added context files)
+ */
+export function getContextDir(projectPath: string): string {
+  return path.join(getAutomakerDir(projectPath), "context");
+}
+
+/**
  * Get the worktrees metadata directory for a project
  */
 export function getWorktreesDir(projectPath: string): string {
