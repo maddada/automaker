@@ -29,6 +29,13 @@ export function createClaudeRoutes(): Router {
         res.status(400).json({ error: "Key is required" });
         return;
       }
+
+      // Validate key format
+      const trimmedKey = key.trim();
+      if (!trimmedKey.startsWith("sk-ant-")) {
+        res.status(400).json({ error: "Invalid session key format. Key must start with 'sk-ant-'" });
+        return;
+      }
       
       await service.saveSessionKey(key);
       res.json({ success: true });
