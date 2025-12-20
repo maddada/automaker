@@ -6,7 +6,7 @@ import {
   rectIntersection,
   pointerWithin,
 } from "@dnd-kit/core";
-import { useAppStore, Feature } from "@/store/app-store";
+import { useAppStore, Feature, isClaudeUsageAtLimit } from "@/store/app-store";
 import { getElectronAPI } from "@/lib/electron";
 import type { AutoModeEvent } from "@/types/electron";
 import { pathsEqual } from "@/lib/utils";
@@ -84,6 +84,7 @@ export function BoardView() {
     enableDependencyBlocking,
     isPrimaryWorktreeBranch,
     getPrimaryWorktreeBranch,
+    claudeUsage,
   } = useAppStore();
   const shortcuts = useKeyboardShortcutsConfig();
   const {
@@ -445,7 +446,7 @@ export function BoardView() {
         requirePlanApproval: false,
       };
 
-      await handleAddFeature(featureData);
+      await handleAddFeature(featureData as any);
 
       // Find the newly created feature and start it
       // We need to wait a moment for the feature to be created
@@ -473,6 +474,7 @@ export function BoardView() {
 
       // Create the feature
       const featureData = {
+        title: `Resolve conflicts on ${worktree.branch}`,
         category: "Maintenance",
         description,
         steps: [],
@@ -535,6 +537,12 @@ export function BoardView() {
   // Track features that are pending (started but not yet confirmed running)
   const pendingFeaturesRef = useRef<Set<string>>(new Set());
 
+  // Track Claude usage to pause auto mode when limits are reached
+  const claudeUsageRef = useRef(claudeUsage);
+  useEffect(() => {
+    claudeUsageRef.current = claudeUsage;
+  }, [claudeUsage]);
+
   // Listen to auto mode events to remove features from pending when they start running
   useEffect(() => {
     const api = getElectronAPI();
@@ -595,6 +603,15 @@ export function BoardView() {
       try {
         // Double-check auto mode is still running before proceeding
         if (!isActive || !autoModeRunningRef.current || !currentProject) {
+          return;
+        }
+
+        // Skip if Claude usage is at any limit (session, weekly, or cost)
+        // This prevents wasting API calls when rate limited
+        if (isClaudeUsageAtLimit(claudeUsageRef.current)) {
+          console.log(
+            "[AutoMode] Claude usage at limit - pausing feature pickup"
+          );
           return;
         }
 
@@ -1253,7 +1270,9 @@ export function BoardView() {
           // If a PR was created and we have the worktree branch, update all features on that branch with the PR URL
           if (prUrl && selectedWorktreeForAction?.branch) {
             const branchName = selectedWorktreeForAction.branch;
-            const featuresToUpdate = hookFeatures.filter((f) => f.branchName === branchName);
+            const featuresToUpdate = hookFeatures.filter(
+              (f) => f.branchName === branchName
+            );
 
             // Update local state synchronously
             featuresToUpdate.forEach((feature) => {

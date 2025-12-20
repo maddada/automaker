@@ -510,6 +510,63 @@ export interface AppState {
 
   // Claude refresh interval (in seconds)
   claudeRefreshInterval: number;
+
+  // Claude Usage State (from usage tracking popover)
+  claudeUsage: ClaudeUsage | null;
+  claudeUsageLastUpdated: number | null;
+}
+
+// Claude Usage interface matching the server response
+export interface ClaudeUsage {
+  sessionTokensUsed: number;
+  sessionLimit: number;
+  sessionPercentage: number;
+  sessionResetTime: string;
+
+  weeklyTokensUsed: number;
+  weeklyLimit: number;
+  weeklyPercentage: number;
+  weeklyResetTime: string;
+
+  opusWeeklyTokensUsed: number;
+  opusWeeklyPercentage: number;
+
+  costUsed: number | null;
+  costLimit: number | null;
+  costCurrency: string | null;
+}
+
+/**
+ * Check if Claude usage is at its limit (any of: session >= 100%, weekly >= 100%, OR cost >= limit)
+ * Returns true if any limit is reached, meaning auto mode should pause feature pickup.
+ */
+export function isClaudeUsageAtLimit(claudeUsage: ClaudeUsage | null): boolean {
+  if (!claudeUsage) {
+    // No usage data available - don't block
+    return false;
+  }
+
+  // Check session limit (5-hour window)
+  if (claudeUsage.sessionPercentage >= 100) {
+    return true;
+  }
+
+  // Check weekly limit
+  if (claudeUsage.weeklyPercentage >= 100) {
+    return true;
+  }
+
+  // Check cost limit (if configured)
+  if (
+    claudeUsage.costLimit !== null &&
+    claudeUsage.costLimit > 0 &&
+    claudeUsage.costUsed !== null &&
+    claudeUsage.costUsed >= claudeUsage.costLimit
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 // Default background settings for board backgrounds
@@ -752,12 +809,17 @@ export interface AppActions {
   setDefaultAIProfileId: (profileId: string | null) => void;
 
   // Plan Approval actions
-  setPendingPlanApproval: (approval: {
-    featureId: string;
-    projectPath: string;
-    planContent: string;
-    planningMode: "lite" | "spec" | "full";
-  } | null) => void;
+  setPendingPlanApproval: (
+    approval: {
+      featureId: string;
+      projectPath: string;
+      planContent: string;
+      planningMode: "lite" | "spec" | "full";
+    } | null
+  ) => void;
+
+  setClaudeRefreshInterval: (interval: number) => void;
+  setClaudeUsage: (usage: ClaudeUsage | null) => void;
 
   // Reset
   reset: () => void;
@@ -847,11 +909,13 @@ const initialState: AppState = {
     defaultFontSize: 14,
   },
   specCreatingForProject: null,
-  defaultPlanningMode: 'skip' as PlanningMode,
+  defaultPlanningMode: "skip" as PlanningMode,
   defaultRequirePlanApproval: false,
   defaultAIProfileId: null,
   pendingPlanApproval: null,
   claudeRefreshInterval: 30, // default 30 seconds
+  claudeUsage: null,
+  claudeUsageLastUpdated: null,
 };
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -1372,8 +1436,8 @@ export const useAppStore = create<AppState & AppActions>()(
                 (id) => id !== taskId
               ),
             },
-          }
-        })
+          },
+        });
       },
       clearRunningTasks: (projectId) => {
         const current = get().autoModeByProject;
@@ -2277,11 +2341,18 @@ export const useAppStore = create<AppState & AppActions>()(
       },
 
       setDefaultPlanningMode: (mode) => set({ defaultPlanningMode: mode }),
-      setDefaultRequirePlanApproval: (require) => set({ defaultRequirePlanApproval: require }),
-      setDefaultAIProfileId: (profileId) => set({ defaultAIProfileId: profileId }),
+      setDefaultRequirePlanApproval: (require) =>
+        set({ defaultRequirePlanApproval: require }),
+      setDefaultAIProfileId: (profileId) =>
+        set({ defaultAIProfileId: profileId }),
 
       // Plan Approval actions
       setPendingPlanApproval: (approval) => set({ pendingPlanApproval: approval }),
+
+      setClaudeRefreshInterval: (interval: number) => set({ claudeRefreshInterval: interval }),
+
+      setClaudeUsageLastUpdated: (timestamp: number) => set({ claudeUsageLastUpdated: timestamp }),
+      setClaudeUsage: (usage: ClaudeUsage | null) => set({ claudeUsage: usage }),
 
       // Reset
       reset: () => set(initialState),

@@ -11,6 +11,12 @@ import { useAppStore } from "@/store/app-store";
 
 export function ClaudeUsageSection() {
   const { claudeRefreshInterval, setClaudeRefreshInterval } = useAppStore();
+  const [localInterval, setLocalInterval] = useState(claudeRefreshInterval);
+
+  // Sync local state with store when store changes (e.g. initial load)
+  useEffect(() => {
+    setLocalInterval(claudeRefreshInterval);
+  }, [claudeRefreshInterval]);
   
   // Session Key State
   const [sessionKey, setSessionKey] = useState("");
@@ -114,7 +120,7 @@ export function ClaudeUsageSection() {
                  <div className="rounded-lg bg-secondary/30 p-3 text-xs text-muted-foreground space-y-2 border border-border/50">
                     <p className="font-medium text-foreground">How to get your session key:</p>
                     <ol className="list-decimal list-inside space-y-1 ml-1">
-                        <li>Visit <a href="https://claude.ai" target="_blank" className="text-brand-500 hover:underline">claude.ai</a> and log in</li>
+                        <li>Visit <a href="https://claude.ai" target="_blank" rel="noopener noreferrer" className="text-brand-500 hover:underline">claude.ai</a> and log in</li>
                         <li>Open Developer Tools (F12 or Cmd+Opt+I)</li>
                         <li>Go to the <span className="font-mono bg-muted px-1 rounded">Application</span> tab</li>
                         <li>Expand <span className="font-mono bg-muted px-1 rounded">Cookies</span> and select <span className="font-mono bg-muted px-1 rounded">https://claude.ai</span></li>
@@ -140,14 +146,15 @@ export function ClaudeUsageSection() {
             
             <div className="flex items-center gap-4">
                 <Slider
-                    value={[claudeRefreshInterval]}
-                    onValueChange={(vals) => setClaudeRefreshInterval(vals[0])}
+                    value={[Math.max(30, Math.min(120, localInterval || 30))]}
+                    onValueChange={(vals) => setLocalInterval(vals[0])}
+                    onValueCommit={(vals) => setClaudeRefreshInterval(vals[0])}
                     min={30}
                     max={120}
                     step={5}
                     className="flex-1"
                 />
-                <span className="w-12 text-sm font-mono text-right">{claudeRefreshInterval}s</span>
+                <span className="w-12 text-sm font-mono text-right">{Math.max(30, Math.min(120, localInterval || 30))}s</span>
             </div>
         </div>
       </div>
