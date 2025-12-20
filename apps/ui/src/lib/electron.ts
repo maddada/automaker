@@ -481,6 +481,11 @@ export interface ElectronAPI {
       sessionId: string
     ) => Promise<{ success: boolean; error?: string }>;
   };
+  claude?: {
+    getUsage: () => Promise<any>;
+    saveSessionKey: (key: string) => Promise<{ success: boolean; error?: string }>;
+    checkKey: () => Promise<{ exists: boolean }>;
+  };
 }
 
 // Note: Window interface is declared in @/types/electron.d.ts

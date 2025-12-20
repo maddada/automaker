@@ -886,6 +886,14 @@ export class HttpApiClient implements ElectronAPI {
     ): Promise<{ success: boolean; error?: string }> =>
       this.httpDelete(`/api/sessions/${sessionId}`),
   };
+
+  // Claude API
+  claude = {
+    getUsage: (): Promise<any> => this.get("/api/claude/usage"),
+    saveSessionKey: (key: string): Promise<{ success: boolean; error?: string }> =>
+      this.post("/api/claude/key", { key }),
+    checkKey: (): Promise<{ exists: boolean }> => this.get("/api/claude/key/check"),
+  };
 }
 
 // Singleton instance

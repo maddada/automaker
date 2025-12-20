@@ -42,6 +42,7 @@ import { FeatureLoader } from "./services/feature-loader.js";
 import { AutoModeService } from "./services/auto-mode-service.js";
 import { getTerminalService } from "./services/terminal-service.js";
 import { createSpecRegenerationRoutes } from "./routes/app-spec/index.js";
+import { createClaudeRoutes } from "./routes/claude/index.js";
 
 // Load environment variables
 dotenv.config();
@@ -137,6 +138,7 @@ app.use("/api/running-agents", createRunningAgentsRoutes(autoModeService));
 app.use("/api/workspace", createWorkspaceRoutes());
 app.use("/api/templates", createTemplatesRoutes());
 app.use("/api/terminal", createTerminalRoutes());
+app.use("/api/claude", createClaudeRoutes());
 
 // Create HTTP server
 const server = createServer(app);

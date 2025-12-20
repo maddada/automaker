@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Plus, Bot } from "lucide-react";
 import { KeyboardShortcut } from "@/hooks/use-keyboard-shortcuts";
+import { ClaudeUsagePopover } from "@/components/claude-usage-popover";
 
 interface BoardHeaderProps {
   projectName: string;
@@ -37,6 +38,9 @@ export function BoardHeader({
         <p className="text-sm text-muted-foreground">{projectName}</p>
       </div>
       <div className="flex gap-2 items-center">
+        {/* Usage Popover */}
+        {isMounted && <ClaudeUsagePopover />}
+
         {/* Concurrency Slider - only show after mount to prevent hydration issues */}
         {isMounted && (
           <div
