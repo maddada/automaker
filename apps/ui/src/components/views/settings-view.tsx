@@ -9,6 +9,7 @@ import { KeyboardMapDialog } from "./settings-view/components/keyboard-map-dialo
 import { DeleteProjectDialog } from "./settings-view/components/delete-project-dialog";
 import { SettingsNavigation } from "./settings-view/components/settings-navigation";
 import { ApiKeysSection } from "./settings-view/api-keys/api-keys-section";
+import { ClaudeUsageSection } from "./settings-view/api-keys/claude-usage-section";
 import { ClaudeCliStatus } from "./settings-view/cli-status/claude-cli-status";
 import { AIEnhancementSection } from "./settings-view/ai-enhancement";
 import { AppearanceSection } from "./settings-view/appearance/appearance-section";
@@ -149,7 +150,12 @@ export function SettingsView() {
           />
         );
       default:
-        return <ApiKeysSection />;
+        return (
+          <div className="space-y-8">
+            <ApiKeysSection />
+            <ClaudeUsageSection />
+          </div>
+        );
     }
   };
 

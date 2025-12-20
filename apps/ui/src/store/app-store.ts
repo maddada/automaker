@@ -507,6 +507,9 @@ export interface AppState {
     planContent: string;
     planningMode: "lite" | "spec" | "full";
   } | null;
+
+  // Claude refresh interval (in seconds)
+  claudeRefreshInterval: number;
 }
 
 // Default background settings for board backgrounds
@@ -848,6 +851,7 @@ const initialState: AppState = {
   defaultRequirePlanApproval: false,
   defaultAIProfileId: null,
   pendingPlanApproval: null,
+  claudeRefreshInterval: 30, // default 30 seconds
 };
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -1368,10 +1372,9 @@ export const useAppStore = create<AppState & AppActions>()(
                 (id) => id !== taskId
               ),
             },
-          },
-        });
+          }
+        })
       },
-
       clearRunningTasks: (projectId) => {
         const current = get().autoModeByProject;
         const projectState = current[projectId] || {

@@ -875,6 +875,38 @@ const getMockElectronAPI = (): ElectronAPI => {
 
     // Mock Running Agents API
     runningAgents: createMockRunningAgentsAPI(),
+
+    // Mock Claude API
+    claude: {
+      getUsage: async () => {
+        console.log("[Mock] Getting Claude usage");
+        return {
+          sessionTokensUsed: 1500,
+          sessionLimit: 10000,
+          sessionPercentage: 15,
+          sessionResetTime: new Date(Date.now() + 3600000).toISOString(),
+          weeklyTokensUsed: 50000,
+          weeklyLimit: 1000000,
+          weeklyPercentage: 5,
+          weeklyResetTime: new Date(Date.now() + 86400000 * 2).toISOString(),
+          opusWeeklyTokensUsed: 10000,
+          opusWeeklyPercentage: 1,
+          costUsed: 5.50,
+          costLimit: 20.00,
+          costCurrency: "USD",
+          lastUpdated: new Date().toISOString(),
+          userTimezone: "UTC"
+        };
+      },
+      saveSessionKey: async (key: string) => {
+        console.log("[Mock] Saving Claude session key");
+        return { success: true };
+      },
+      checkKey: async () => {
+        console.log("[Mock] Checking Claude session key");
+        return { exists: true };
+      }
+    }
   };
 };
 

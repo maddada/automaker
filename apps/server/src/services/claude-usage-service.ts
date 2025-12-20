@@ -20,8 +20,17 @@ export class ClaudeUsageService {
   async getSessionKey(): Promise<string> {
     try {
       const key = await fs.readFile(this.sessionKeyPath, "utf-8");
-      const trimmedKey = key.trim();
+      let trimmedKey = key.trim();
+      
+      // Handle cases where user copied "sessionKey=sk-ant..."
+      if (trimmedKey.startsWith("sessionKey=")) {
+        trimmedKey = trimmedKey.replace("sessionKey=", "");
+      }
+      // Handle potentially quoted strings
+      trimmedKey = trimmedKey.replace(/^"|"$/g, "");
+
       if (!trimmedKey || !trimmedKey.startsWith("sk-ant-")) {
+        console.warn(`[ClaudeUsageService] Invalid key format. Key starts with: ${trimmedKey.substring(0, 10)}...`);
         throw new Error("Invalid session key format");
       }
       return trimmedKey;
@@ -34,19 +43,35 @@ export class ClaudeUsageService {
   }
 
   async saveSessionKey(key: string): Promise<void> {
-    const trimmedKey = key.trim();
+    let trimmedKey = key.trim();
+    // Clean key before saving
+    if (trimmedKey.startsWith("sessionKey=")) {
+        trimmedKey = trimmedKey.replace("sessionKey=", "");
+    }
+    trimmedKey = trimmedKey.replace(/^"|"$/g, "");
+    
     await fs.writeFile(this.sessionKeyPath, trimmedKey, { mode: 0o600, encoding: "utf-8" });
+  }
+
+  private getHeaders(sessionKey: string): HeadersInit {
+      return {
+        "Cookie": `sessionKey=${sessionKey}`,
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Origin": "https://claude.ai",
+        "Referer": "https://claude.ai/",
+      };
   }
 
   async fetchOrganizationId(sessionKey: string): Promise<string> {
     const response = await fetch(`${CLAUDE_API_BASE_URL}/organizations`, {
-      headers: {
-        Cookie: `sessionKey=${sessionKey}`,
-        Accept: "application/json",
-      },
+      headers: this.getHeaders(sessionKey),
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[ClaudeUsageService] Organization fetch failed: ${response.status} ${response.statusText}`, errorText);
+      
       if (response.status === 401 || response.status === 403) {
         throw new Error("Unauthorized");
       }
@@ -62,19 +87,16 @@ export class ClaudeUsageService {
 
   private async performRequest(endpoint: string, sessionKey: string): Promise<any> {
     const response = await fetch(`${CLAUDE_API_BASE_URL}${endpoint}`, {
-      headers: {
-        Cookie: `sessionKey=${sessionKey}`,
-        Accept: "application/json",
-      },
+      headers: this.getHeaders(sessionKey),
     });
 
     if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ClaudeUsageService] Request to ${endpoint} failed: ${response.status} ${response.statusText}`, errorText);
+
         if (response.status === 401 || response.status === 403) {
             throw new Error("Unauthorized");
         }
-      // Try to read error text
-      const errorText = await response.text();
-      console.error(`Error response for ${endpoint}: ${errorText}`);
       throw new Error(`Server error: ${response.status}`);
     }
 
