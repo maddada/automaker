@@ -51,7 +51,9 @@ export function SettingsView() {
   } = useAppStore();
 
   // Hide usage tracking when using API key (only show for Claude Code CLI users)
-  const showUsageTracking = !apiKeys.anthropic;
+  // Also hide on Windows for now (CLI usage command not supported)
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('win');
+  const showUsageTracking = !apiKeys.anthropic && !isWindows;
 
   // Convert electron Project to settings-view Project type
   const convertProject = (
