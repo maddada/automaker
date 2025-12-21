@@ -1,42 +1,23 @@
-export interface UsagePeriod {
-  period: string;
-  usage_type: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_tokens?: number;
-  cache_read_tokens?: number;
-}
+/**
+ * Claude Usage types for CLI-based usage tracking
+ */
 
-export interface UsageResponse {
-  usage: UsagePeriod[];
-}
-
-export interface AccountInfo {
-  uuid: string;
-  name: string;
-  capabilities: string[];
-}
-
-export interface OverageSpendLimitResponse {
-  monthly_credit_limit: number | null;
-  currency: string | null;
-  used_credits: number | null;
-  is_enabled: boolean | null;
-}
-
-export interface ClaudeUsage {
+export type ClaudeUsage = {
   sessionTokensUsed: number;
   sessionLimit: number;
   sessionPercentage: number;
   sessionResetTime: string; // ISO date string
+  sessionResetText: string; // Raw text like "Resets 10:59am (Asia/Dubai)"
 
   weeklyTokensUsed: number;
   weeklyLimit: number;
   weeklyPercentage: number;
   weeklyResetTime: string; // ISO date string
+  weeklyResetText: string; // Raw text like "Resets Dec 22 at 7:59pm (Asia/Dubai)"
 
   opusWeeklyTokensUsed: number;
   opusWeeklyPercentage: number;
+  opusResetText: string; // Raw text like "Resets Dec 27 at 9:59am (Asia/Dubai)"
 
   costUsed: number | null;
   costLimit: number | null;
@@ -44,11 +25,11 @@ export interface ClaudeUsage {
 
   lastUpdated: string; // ISO date string
   userTimezone: string;
-}
+};
 
-export interface ClaudeStatus {
-    indicator: {
-        color: 'green' | 'yellow' | 'orange' | 'red' | 'gray';
-    };
-    description: string;
-}
+export type ClaudeStatus = {
+  indicator: {
+    color: "green" | "yellow" | "orange" | "red" | "gray";
+  };
+  description: string;
+};

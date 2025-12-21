@@ -483,8 +483,6 @@ export interface ElectronAPI {
   };
   claude?: {
     getUsage: () => Promise<any>;
-    saveSessionKey: (key: string) => Promise<{ success: boolean; error?: string }>;
-    checkKey: () => Promise<{ exists: boolean }>;
   };
 }
 
@@ -881,31 +879,23 @@ const getMockElectronAPI = (): ElectronAPI => {
       getUsage: async () => {
         console.log("[Mock] Getting Claude usage");
         return {
-          sessionTokensUsed: 1500,
-          sessionLimit: 10000,
+          sessionTokensUsed: 0,
+          sessionLimit: 0,
           sessionPercentage: 15,
           sessionResetTime: new Date(Date.now() + 3600000).toISOString(),
-          weeklyTokensUsed: 50000,
-          weeklyLimit: 1000000,
+          weeklyTokensUsed: 0,
+          weeklyLimit: 0,
           weeklyPercentage: 5,
           weeklyResetTime: new Date(Date.now() + 86400000 * 2).toISOString(),
-          opusWeeklyTokensUsed: 10000,
+          opusWeeklyTokensUsed: 0,
           opusWeeklyPercentage: 1,
-          costUsed: 5.50,
-          costLimit: 20.00,
-          costCurrency: "USD",
+          costUsed: null,
+          costLimit: null,
+          costCurrency: null,
           lastUpdated: new Date().toISOString(),
           userTimezone: "UTC"
         };
       },
-      saveSessionKey: async (key: string) => {
-        console.log("[Mock] Saving Claude session key");
-        return { success: true };
-      },
-      checkKey: async () => {
-        console.log("[Mock] Checking Claude session key");
-        return { exists: true };
-      }
     }
   };
 };

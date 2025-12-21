@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Popover,
   PopoverContent,
@@ -17,63 +17,18 @@ import {
 import { cn } from "@/lib/utils";
 import { getElectronAPI } from "@/lib/electron";
 import { useAppStore } from "@/store/app-store";
-import { useNavigate } from "@tanstack/react-router";
-
-// Simple date formatter to replace date-fns format(date, "EEE h:mm a")
-const formatDate = (dateString: string) => {
-    try {
-        const date = new Date(dateString);
-        return new Intl.DateTimeFormat("en-US", {
-            weekday: "short",
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-        }).format(date);
-    } catch (e) {
-        return "";
-    }
-};
-
-// Types matching the server response
-// ClaudeUsage is now exported from @/store/app-store and used via the store hook
-
-interface ClaudeStatus {
-    indicator: {
-        color: "green" | "yellow" | "orange" | "red" | "gray";
-    };
-    description: string;
-}
 
 export function ClaudeUsagePopover() {
   const { claudeRefreshInterval, claudeUsage, claudeUsageLastUpdated, setClaudeUsage } =
     useAppStore();
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
 
-  // Check if key exists on mount
-  useEffect(() => {
-    const checkKey = async () => {
-      const api = getElectronAPI();
-      if (api.claude) {
-        const result = await api.claude.checkKey();
-        setHasKey(result.exists);
-
-        // Auto-fetch if key exists and data is stale (> 2 mins)
-        if (result.exists) {
-          const now = Date.now();
-          const stale =
-            !claudeUsageLastUpdated || now - claudeUsageLastUpdated > 2 * 60 * 1000;
-          if (stale) {
-            fetchUsage(true); // Fetch in background
-          }
-        }
-      }
-    };
-    checkKey();
-  }, []); // Only on mount
+  // Check if data is stale (older than 2 minutes) - recalculates when claudeUsageLastUpdated changes
+  const isStale = useMemo(() => {
+    return !claudeUsageLastUpdated || Date.now() - claudeUsageLastUpdated > 2 * 60 * 1000;
+  }, [claudeUsageLastUpdated]);
 
   const fetchUsage = async (isAutoRefresh = false) => {
     if (!isAutoRefresh) setLoading(true);
@@ -85,16 +40,7 @@ export function ClaudeUsagePopover() {
       }
       const data = await api.claude.getUsage();
       if (data.error) {
-        // Clear key state for auth/validation errors so button shows "No Key" state
-        if (data.error === "Unauthorized") {
-          setHasKey(false);
-          throw new Error("Session key expired or invalid");
-        }
-        if (data.error === "Invalid session key format") {
-          setHasKey(false);
-          throw new Error("Invalid session key format");
-        }
-        throw new Error(data.error);
+        throw new Error(data.message || data.error);
       }
       setClaudeUsage(data);
     } catch (err) {
@@ -104,17 +50,21 @@ export function ClaudeUsagePopover() {
     }
   };
 
+  // Auto-fetch on mount if data is stale
   useEffect(() => {
-    // Initial fetch when opened - force fetch if no data
-    if (open && hasKey) {
-      // If we have no data, fetch immediately
+    if (isStale) {
+      fetchUsage(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Initial fetch when opened
+    if (open) {
       if (!claudeUsage) {
         fetchUsage();
       } else {
-        // If we have data, check if it's stale
         const now = Date.now();
-        const stale =
-          !claudeUsageLastUpdated || now - claudeUsageLastUpdated > 2 * 60 * 1000;
+        const stale = !claudeUsageLastUpdated || now - claudeUsageLastUpdated > 2 * 60 * 1000;
         if (stale) {
           fetchUsage(false);
         }
@@ -123,7 +73,7 @@ export function ClaudeUsagePopover() {
 
     // Auto-refresh interval (only when open)
     let intervalId: NodeJS.Timeout | null = null;
-    if (open && hasKey && claudeRefreshInterval > 0) {
+    if (open && claudeRefreshInterval > 0) {
       intervalId = setInterval(() => {
         fetchUsage(true);
       }, claudeRefreshInterval * 1000);
@@ -132,7 +82,7 @@ export function ClaudeUsagePopover() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [open, hasKey]); // Removed claudeUsageLastUpdated from deps to avoid loop
+  }, [open]);
 
   // Derived status color/icon helper
   const getStatusInfo = (percentage: number) => {
@@ -163,14 +113,16 @@ export function ClaudeUsagePopover() {
     title,
     subtitle,
     percentage,
-    resetTime,
+    resetText,
     isPrimary = false,
+    stale = false,
   }: {
     title: string;
     subtitle: string;
     percentage: number;
-    resetTime?: string;
+    resetText?: string;
     isPrimary?: boolean;
+    stale?: boolean;
   }) => {
     const status = getStatusInfo(percentage);
     const StatusIcon = status.icon;
@@ -178,8 +130,9 @@ export function ClaudeUsagePopover() {
     return (
       <div
         className={cn(
-          "rounded-xl border bg-card/50 p-4",
-          isPrimary ? "border-border/60 shadow-sm" : "border-border/40"
+          "rounded-xl border bg-card/50 p-4 transition-opacity",
+          isPrimary ? "border-border/60 shadow-sm" : "border-border/40",
+          stale && "opacity-60"
         )}
       >
         <div className="flex items-start justify-between mb-3">
@@ -203,11 +156,11 @@ export function ClaudeUsagePopover() {
           </div>
         </div>
         <ProgressBar percentage={percentage} colorClass={status.bg} />
-        {resetTime && (
+        {resetText && (
           <div className="mt-2 flex justify-end">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              Resets {formatDate(resetTime)}
+              {resetText}
             </p>
           </div>
         )}
@@ -233,8 +186,11 @@ export function ClaudeUsagePopover() {
       className="h-9 gap-3 bg-secondary border border-border px-3"
     >
       <span className="text-sm font-medium">Usage</span>
-      {hasKey && (
-        <div className="h-1.5 w-16 bg-muted-foreground/20 rounded-full overflow-hidden">
+      {claudeUsage && (
+        <div className={cn(
+          "h-1.5 w-16 bg-muted-foreground/20 rounded-full overflow-hidden transition-opacity",
+          isStale && "opacity-60"
+        )}>
           <div
             className={cn(
               "h-full transition-all duration-500",
@@ -246,13 +202,6 @@ export function ClaudeUsagePopover() {
       )}
     </Button>
   );
-
-  if (hasKey === false) {
-    // If no key, maybe show nothing or a prompt.
-    // Requirement says "implement a way ... to add the key ... like Claude Usage Tracker".
-    // But button availability wasn't strictly specified for 'no key' state.
-    // I'll leave it visible but show message inside.
-  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -270,11 +219,10 @@ export function ClaudeUsagePopover() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6"
-            onClick={() => fetchUsage(false)}
-            disabled={loading}
+            className={cn("h-6 w-6", loading && "opacity-80")}
+            onClick={() => !loading && fetchUsage(false)}
           >
-            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+            <RefreshCw className="w-3.5 h-3.5" />
           </Button>
         </div>
 
@@ -285,19 +233,9 @@ export function ClaudeUsagePopover() {
               <AlertTriangle className="w-8 h-8 text-yellow-500/80" />
               <div className="space-y-1 flex flex-col items-center">
                 <p className="text-sm font-medium">{error}</p>
-                {(error.includes("session key") ||
-                  error === "Session key expired or invalid") && (
-                  <Button
-                    variant="link"
-                    className="text-xs text-brand-500 h-auto p-0 hover:no-underline"
-                    onClick={() => {
-                      setOpen(false);
-                      navigate({ to: "/settings" });
-                    }}
-                  >
-                    Configure in Settings →
-                  </Button>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Make sure Claude CLI is installed and authenticated via <code className="font-mono bg-muted px-1 rounded">claude login</code>
+                </p>
               </div>
             </div>
           ) : !claudeUsage ? (
@@ -313,35 +251,27 @@ export function ClaudeUsagePopover() {
                 title="Session Usage"
                 subtitle="5-hour rolling window"
                 percentage={claudeUsage.sessionPercentage}
-                resetTime={claudeUsage.sessionResetTime}
+                resetText={claudeUsage.sessionResetText}
                 isPrimary={true}
+                stale={isStale}
               />
 
               {/* Secondary Cards Grid */}
-              <div
-                className={cn(
-                  "grid gap-3",
-                  (claudeUsage?.costLimit && claudeUsage.costLimit > 0) ||
-                    (claudeUsage?.opusWeeklyTokensUsed &&
-                      claudeUsage.opusWeeklyTokensUsed > 0)
-                    ? "grid-cols-2"
-                    : "grid-cols-1"
-                )}
-              >
+              <div className="grid grid-cols-2 gap-3">
                 <UsageCard
                   title="Weekly"
                   subtitle="All models"
                   percentage={claudeUsage.weeklyPercentage}
-                  resetTime={claudeUsage.weeklyResetTime}
+                  resetText={claudeUsage.weeklyResetText}
+                  stale={isStale}
                 />
-                {claudeUsage.opusWeeklyTokensUsed > 0 && (
-                  <UsageCard
-                    title="Opus"
-                    subtitle="Weekly"
-                    percentage={claudeUsage.opusWeeklyPercentage}
-                    // resetTime is same as weekly
-                  />
-                )}
+                <UsageCard
+                  title="Sonnet"
+                  subtitle="Weekly"
+                  percentage={claudeUsage.opusWeeklyPercentage}
+                  resetText={claudeUsage.opusResetText}
+                  stale={isStale}
+                />
               </div>
 
               {/* Extra Usage / Cost */}
@@ -354,6 +284,7 @@ export function ClaudeUsagePopover() {
                       ? ((claudeUsage.costUsed ?? 0) / claudeUsage.costLimit) * 100
                       : 0
                   }
+                  stale={isStale}
                 />
               )}
             </>

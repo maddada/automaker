@@ -2352,7 +2352,10 @@ export const useAppStore = create<AppState & AppActions>()(
       setClaudeRefreshInterval: (interval: number) => set({ claudeRefreshInterval: interval }),
 
       setClaudeUsageLastUpdated: (timestamp: number) => set({ claudeUsageLastUpdated: timestamp }),
-      setClaudeUsage: (usage: ClaudeUsage | null) => set({ claudeUsage: usage }),
+      setClaudeUsage: (usage: ClaudeUsage | null) => set({
+        claudeUsage: usage,
+        claudeUsageLastUpdated: usage ? Date.now() : null,
+      }),
 
       // Reset
       reset: () => set(initialState),
@@ -2426,6 +2429,10 @@ export const useAppStore = create<AppState & AppActions>()(
         defaultPlanningMode: state.defaultPlanningMode,
         defaultRequirePlanApproval: state.defaultRequirePlanApproval,
         defaultAIProfileId: state.defaultAIProfileId,
+        // Claude usage tracking
+        claudeUsage: state.claudeUsage,
+        claudeUsageLastUpdated: state.claudeUsageLastUpdated,
+        claudeRefreshInterval: state.claudeRefreshInterval,
       }),
     }
   )

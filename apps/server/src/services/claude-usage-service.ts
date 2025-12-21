@@ -1,204 +1,358 @@
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
-import {
-  ClaudeUsage,
-  AccountInfo,
-  OverageSpendLimitResponse,
-} from "../routes/claude/types";
+import { spawn } from "child_process";
+import { ClaudeUsage } from "../routes/claude/types.js";
 
-const CLAUDE_API_BASE_URL = "https://claude.ai/api";
-const WEEKLY_LIMIT = 1000000; // Default reference limit
-
+/**
+ * Claude Usage Service
+ *
+ * Fetches usage data by executing the Claude CLI's /usage command.
+ * This approach doesn't require any API keys - it relies on the user
+ * having already authenticated via `claude login`.
+ *
+ * Based on ClaudeBar's implementation approach.
+ */
 export class ClaudeUsageService {
-  private sessionKeyPath: string;
+  private claudeBinary = "claude";
+  private timeout = 30000; // 30 second timeout
 
-  constructor() {
-    this.sessionKeyPath = path.join(os.homedir(), ".claude-session-key");
-  }
-
-  async getSessionKey(): Promise<string> {
-    try {
-      const key = await fs.readFile(this.sessionKeyPath, "utf-8");
-      let trimmedKey = key.trim();
-      
-      // Handle cases where user copied "sessionKey=sk-ant..."
-      if (trimmedKey.startsWith("sessionKey=")) {
-        trimmedKey = trimmedKey.replace("sessionKey=", "");
-      }
-      // Handle potentially quoted strings
-      trimmedKey = trimmedKey.replace(/^"|"$/g, "");
-
-      if (!trimmedKey || !trimmedKey.startsWith("sk-ant-")) {
-        console.warn(`[ClaudeUsageService] Invalid key format. Key starts with: ${trimmedKey.substring(0, 10)}...`);
-        throw new Error("Invalid session key format");
-      }
-      return trimmedKey;
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-             throw new Error("No session key found");
-        }
-      throw error;
-    }
-  }
-
-  async saveSessionKey(key: string): Promise<void> {
-    let trimmedKey = key.trim();
-    // Clean key before saving
-    if (trimmedKey.startsWith("sessionKey=")) {
-        trimmedKey = trimmedKey.replace("sessionKey=", "");
-    }
-    trimmedKey = trimmedKey.replace(/^"|"$/g, "");
-    
-    await fs.writeFile(this.sessionKeyPath, trimmedKey, { mode: 0o600, encoding: "utf-8" });
-  }
-
-  private getHeaders(sessionKey: string): HeadersInit {
-      return {
-        "Cookie": `sessionKey=${sessionKey}`,
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Origin": "https://claude.ai",
-        "Referer": "https://claude.ai/",
-      };
-  }
-
-  async fetchOrganizationId(sessionKey: string): Promise<string> {
-    const response = await fetch(`${CLAUDE_API_BASE_URL}/organizations`, {
-      headers: this.getHeaders(sessionKey),
+  /**
+   * Check if Claude CLI is available on the system
+   */
+  async isAvailable(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const proc = spawn("which", [this.claudeBinary]);
+      proc.on("close", (code) => {
+        resolve(code === 0);
+      });
+      proc.on("error", () => {
+        resolve(false);
+      });
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[ClaudeUsageService] Organization fetch failed: ${response.status} ${response.statusText}`, errorText);
-      
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("Unauthorized");
-      }
-      throw new Error(`Server error: ${response.status}`);
-    }
-
-    const organizations = (await response.json()) as AccountInfo[];
-    if (!organizations.length) {
-      throw new Error("No organizations found");
-    }
-    return organizations[0].uuid;
   }
 
-  private async performRequest(endpoint: string, sessionKey: string): Promise<any> {
-    const response = await fetch(`${CLAUDE_API_BASE_URL}${endpoint}`, {
-      headers: this.getHeaders(sessionKey),
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[ClaudeUsageService] Request to ${endpoint} failed: ${response.status} ${response.statusText}`, errorText);
-
-        if (response.status === 401 || response.status === 403) {
-            throw new Error("Unauthorized");
-        }
-      throw new Error(`Server error: ${response.status}`);
-    }
-
-    return response.json();
-  }
-  
-  // Helper to calculate next Monday 12:59 PM (similar to Swift's Date extension)
-  private getNextMonday1259pm(): Date {
-      const now = new Date();
-      const result = new Date(now);
-      
-      // Calculate days until next Monday
-      // getDay(): 0 = Sunday, 1 = Monday, ... 6 = Saturday
-      // If today is Monday (1), we want next Monday (7 days away)
-      // If today is Tuesday (2), we want next Monday (6 days away)
-      const currentDay = now.getDay();
-      let daysUntilMonday = (1 + 7 - currentDay) % 7;
-      if (daysUntilMonday === 0) daysUntilMonday = 7;
-      
-      result.setDate(result.getDate() + daysUntilMonday);
-      result.setHours(12, 59, 0, 0);
-      return result;
-  }
-
+  /**
+   * Fetch usage data by executing the Claude CLI
+   */
   async fetchUsageData(): Promise<ClaudeUsage> {
-    const sessionKey = await this.getSessionKey();
-    const orgId = await this.fetchOrganizationId(sessionKey);
-
-    const usagePromise = this.performRequest(`/organizations/${orgId}/usage`, sessionKey);
-    // For now, let's assume checkOverage is always attempted if we are fetching usage, 
-    // we can make it optional later if needed or controlled by a flag passed in.
-    // In the Swift app, it reads from UserDefaults.
-    const overagePromise = this.performRequest(`/organizations/${orgId}/overage_spend_limit`, sessionKey).catch(() => null);
-
-    const [usageData, overageData] = await Promise.all([usagePromise, overagePromise]);
-
-    return this.parseUsageResponse(usageData, overageData);
+    const output = await this.executeClaudeUsageCommand();
+    return this.parseUsageOutput(output);
   }
 
-  private parseUsageResponse(json: any, overageData: OverageSpendLimitResponse | null): ClaudeUsage {
-    // Session (five_hour)
-    let sessionPercentage = 0.0;
-    let sessionResetTime = new Date(Date.now() + 5 * 3600 * 1000); // Default +5h
+  /**
+   * Execute the claude /usage command and return the output
+   * Uses 'expect' to provide a pseudo-TTY since claude requires one
+   */
+  private executeClaudeUsageCommand(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
 
-    if (json.five_hour) {
-        if (typeof json.five_hour.utilization === 'number') {
-            sessionPercentage = json.five_hour.utilization;
+      // Use a simple working directory (home or tmp)
+      const workingDirectory = process.env.HOME || "/tmp";
+
+      // Use 'expect' with an inline script to run claude /usage with a PTY
+      // Wait for "Current session" header, then wait for full output before exiting
+      const expectScript = `
+        set timeout 20
+        spawn claude /usage
+        expect {
+          "Current session" {
+            sleep 2
+            send "\\x1b"
+          }
+          "Esc to cancel" {
+            sleep 3
+            send "\\x1b"
+          }
+          timeout {}
+          eof {}
         }
-        if (json.five_hour.resets_at) {
-            sessionResetTime = new Date(json.five_hour.resets_at);
+        expect eof
+      `;
+
+      const proc = spawn("expect", ["-c", expectScript], {
+        cwd: workingDirectory,
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+        },
+      });
+
+      const timeoutId = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          proc.kill();
+          reject(new Error("Command timed out"));
         }
+      }, this.timeout);
+
+      proc.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on("close", (code) => {
+        clearTimeout(timeoutId);
+        if (settled) return;
+        settled = true;
+
+        // Check for authentication errors in output
+        if (stdout.includes("token_expired") || stdout.includes("authentication_error") ||
+            stderr.includes("token_expired") || stderr.includes("authentication_error")) {
+          reject(new Error("Authentication required - please run 'claude login'"));
+          return;
+        }
+
+        // Even if exit code is non-zero, we might have useful output
+        if (stdout.trim()) {
+          resolve(stdout);
+        } else if (code !== 0) {
+          reject(new Error(stderr || `Command exited with code ${code}`));
+        } else {
+          reject(new Error("No output from claude command"));
+        }
+      });
+
+      proc.on("error", (err) => {
+        clearTimeout(timeoutId);
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Failed to execute claude: ${err.message}`));
+        }
+      });
+    });
+  }
+
+  /**
+   * Strip ANSI escape codes from text
+   */
+  private stripAnsiCodes(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1B\[[0-9;]*[A-Za-z]/g, "");
+  }
+
+  /**
+   * Parse the Claude CLI output to extract usage information
+   *
+   * Expected output format:
+   * ```
+   * Claude Code v1.0.27
+   *
+   * Current session
+   * ████████████████░░░░ 65% left
+   * Resets in 2h 15m
+   *
+   * Current week (all models)
+   * ██████████░░░░░░░░░░ 35% left
+   * Resets Jan 15, 3:30pm (America/Los_Angeles)
+   *
+   * Current week (Opus)
+   * ████████████████████ 80% left
+   * Resets Jan 15, 3:30pm (America/Los_Angeles)
+   * ```
+   */
+  private parseUsageOutput(rawOutput: string): ClaudeUsage {
+    const output = this.stripAnsiCodes(rawOutput);
+    const lines = output.split("\n").map(l => l.trim()).filter(l => l);
+
+    // Parse session usage
+    const sessionData = this.parseSection(lines, "Current session", "session");
+
+    // Parse weekly usage (all models)
+    const weeklyData = this.parseSection(lines, "Current week (all models)", "weekly");
+
+    // Parse Sonnet/Opus usage - try different labels
+    let opusData = this.parseSection(lines, "Current week (Sonnet only)", "opus");
+    if (opusData.percentage === 0) {
+      opusData = this.parseSection(lines, "Current week (Sonnet)", "opus");
     }
-
-    // Weekly (seven_day)
-    let weeklyPercentage = 0.0;
-    let weeklyResetTime = this.getNextMonday1259pm();
-
-    if (json.seven_day) {
-         if (typeof json.seven_day.utilization === 'number') {
-             weeklyPercentage = json.seven_day.utilization;
-         }
-         if (json.seven_day.resets_at) {
-             weeklyResetTime = new Date(json.seven_day.resets_at);
-         }
-    }
-
-    // Opus Weekly
-    let opusPercentage = 0.0;
-    if (json.seven_day_opus && typeof json.seven_day_opus.utilization === 'number') {
-        opusPercentage = json.seven_day_opus.utilization;
-    }
-
-    const weeklyTokens = Math.floor(WEEKLY_LIMIT * (weeklyPercentage / 100.0));
-    const opusTokens = Math.floor(WEEKLY_LIMIT * (opusPercentage / 100.0));
-    
-    // Overage
-    let costUsed: number | null = null;
-    let costLimit: number | null = null;
-    let costCurrency: string | null = null;
-    
-    if (overageData && overageData.is_enabled) {
-        costUsed = overageData.used_credits;
-        costLimit = overageData.monthly_credit_limit;
-        costCurrency = overageData.currency;
+    if (opusData.percentage === 0) {
+      opusData = this.parseSection(lines, "Current week (Opus)", "opus");
     }
 
     return {
-        sessionTokensUsed: 0, // Unknown
-        sessionLimit: 0, // Unknown
-        sessionPercentage,
-        sessionResetTime: sessionResetTime.toISOString(),
-        weeklyTokensUsed: weeklyTokens,
-        weeklyLimit: WEEKLY_LIMIT,
-        weeklyPercentage,
-        weeklyResetTime: weeklyResetTime.toISOString(),
-        opusWeeklyTokensUsed: opusTokens,
-        opusWeeklyPercentage: opusPercentage,
-        costUsed,
-        costLimit,
-        costCurrency,
-        lastUpdated: new Date().toISOString(),
-        userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      sessionTokensUsed: 0, // Not available from CLI
+      sessionLimit: 0, // Not available from CLI
+      sessionPercentage: sessionData.percentage,
+      sessionResetTime: sessionData.resetTime,
+      sessionResetText: sessionData.resetText,
+
+      weeklyTokensUsed: 0, // Not available from CLI
+      weeklyLimit: 0, // Not available from CLI
+      weeklyPercentage: weeklyData.percentage,
+      weeklyResetTime: weeklyData.resetTime,
+      weeklyResetText: weeklyData.resetText,
+
+      opusWeeklyTokensUsed: 0, // Not available from CLI
+      opusWeeklyPercentage: opusData.percentage,
+      opusResetText: opusData.resetText,
+
+      costUsed: null, // Not available from CLI
+      costLimit: null,
+      costCurrency: null,
+
+      lastUpdated: new Date().toISOString(),
+      userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
+  }
+
+  /**
+   * Parse a section of the usage output to extract percentage and reset time
+   */
+  private parseSection(lines: string[], sectionLabel: string, type: string): { percentage: number; resetTime: string; resetText: string } {
+    let percentage = 0;
+    let resetTime = this.getDefaultResetTime(type);
+    let resetText = "";
+
+    // Find the LAST occurrence of the section (terminal output has multiple screen refreshes)
+    let sectionIndex = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].toLowerCase().includes(sectionLabel.toLowerCase())) {
+        sectionIndex = i;
+        break;
+      }
+    }
+
+    if (sectionIndex === -1) {
+      return { percentage, resetTime, resetText };
+    }
+
+    // Look at the lines following the section header (within a window of 5 lines)
+    const searchWindow = lines.slice(sectionIndex, sectionIndex + 5);
+
+    for (const line of searchWindow) {
+      // Extract percentage - look for patterns like "65% left" or "35% used"
+      const percentMatch = line.match(/(\d{1,3})\s*%\s*(left|used|remaining)/i);
+      if (percentMatch) {
+        const value = parseInt(percentMatch[1], 10);
+        const isUsed = percentMatch[2].toLowerCase() === "used";
+        // Convert "left" to "used" percentage (our UI shows % used)
+        percentage = isUsed ? value : (100 - value);
+      }
+
+      // Extract reset time
+      if (line.toLowerCase().includes("reset")) {
+        resetText = line;
+      }
+    }
+
+    // Parse the reset time if we found one
+    if (resetText) {
+      resetTime = this.parseResetTime(resetText, type);
+      // Strip timezone like "(Asia/Dubai)" from the display text
+      resetText = resetText.replace(/\s*\([A-Za-z_\/]+\)\s*$/, "").trim();
+    }
+
+    return { percentage, resetTime, resetText };
+  }
+
+  /**
+   * Parse reset time from text like "Resets in 2h 15m", "Resets 11am", or "Resets Dec 22 at 8pm"
+   */
+  private parseResetTime(text: string, type: string): string {
+    const now = new Date();
+
+    // Try to parse duration format: "Resets in 2h 15m" or "Resets in 30m"
+    const durationMatch = text.match(/(\d+)\s*h(?:ours?)?(?:\s+(\d+)\s*m(?:in)?)?|(\d+)\s*m(?:in)?/i);
+    if (durationMatch) {
+      let hours = 0;
+      let minutes = 0;
+
+      if (durationMatch[1]) {
+        hours = parseInt(durationMatch[1], 10);
+        minutes = durationMatch[2] ? parseInt(durationMatch[2], 10) : 0;
+      } else if (durationMatch[3]) {
+        minutes = parseInt(durationMatch[3], 10);
+      }
+
+      const resetDate = new Date(now.getTime() + (hours * 60 + minutes) * 60 * 1000);
+      return resetDate.toISOString();
+    }
+
+    // Try to parse simple time-only format: "Resets 11am" or "Resets 3pm"
+    const simpleTimeMatch = text.match(/resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    if (simpleTimeMatch) {
+      let hours = parseInt(simpleTimeMatch[1], 10);
+      const minutes = simpleTimeMatch[2] ? parseInt(simpleTimeMatch[2], 10) : 0;
+      const ampm = simpleTimeMatch[3].toLowerCase();
+
+      // Convert 12-hour to 24-hour
+      if (ampm === "pm" && hours !== 12) {
+        hours += 12;
+      } else if (ampm === "am" && hours === 12) {
+        hours = 0;
+      }
+
+      // Create date for today at specified time
+      const resetDate = new Date(now);
+      resetDate.setHours(hours, minutes, 0, 0);
+
+      // If time has passed, use tomorrow
+      if (resetDate <= now) {
+        resetDate.setDate(resetDate.getDate() + 1);
+      }
+      return resetDate.toISOString();
+    }
+
+    // Try to parse date format: "Resets Dec 22 at 8pm" or "Resets Jan 15, 3:30pm"
+    const dateMatch = text.match(/([A-Za-z]{3,})\s+(\d{1,2})(?:\s+at\s+|\s*,?\s*)(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    if (dateMatch) {
+      const monthName = dateMatch[1];
+      const day = parseInt(dateMatch[2], 10);
+      let hours = parseInt(dateMatch[3], 10);
+      const minutes = dateMatch[4] ? parseInt(dateMatch[4], 10) : 0;
+      const ampm = dateMatch[5].toLowerCase();
+
+      // Convert 12-hour to 24-hour
+      if (ampm === "pm" && hours !== 12) {
+        hours += 12;
+      } else if (ampm === "am" && hours === 12) {
+        hours = 0;
+      }
+
+      // Parse month name
+      const months: Record<string, number> = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+      };
+      const month = months[monthName.toLowerCase().substring(0, 3)];
+
+      if (month !== undefined) {
+        let year = now.getFullYear();
+        // If the date appears to be in the past, assume next year
+        const resetDate = new Date(year, month, day, hours, minutes);
+        if (resetDate < now) {
+          resetDate.setFullYear(year + 1);
+        }
+        return resetDate.toISOString();
+      }
+    }
+
+    // Fallback to default
+    return this.getDefaultResetTime(type);
+  }
+
+  /**
+   * Get default reset time based on usage type
+   */
+  private getDefaultResetTime(type: string): string {
+    const now = new Date();
+
+    if (type === "session") {
+      // Session resets in ~5 hours
+      return new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+    } else {
+      // Weekly resets on next Monday around noon
+      const result = new Date(now);
+      const currentDay = now.getDay();
+      let daysUntilMonday = (1 + 7 - currentDay) % 7;
+      if (daysUntilMonday === 0) daysUntilMonday = 7;
+      result.setDate(result.getDate() + daysUntilMonday);
+      result.setHours(12, 59, 0, 0);
+      return result.toISOString();
+    }
   }
 }

@@ -5,54 +5,39 @@ export function createClaudeRoutes(): Router {
   const router = Router();
   const service = new ClaudeUsageService();
 
-  // Get current usage
+  // Get current usage (fetches from Claude CLI)
   router.get("/usage", async (req: Request, res: Response) => {
     try {
+      // Check if Claude CLI is available first
+      const isAvailable = await service.isAvailable();
+      if (!isAvailable) {
+        res.status(503).json({
+          error: "Claude CLI not found",
+          message: "Please install Claude Code CLI and run 'claude login' to authenticate"
+        });
+        return;
+      }
+
       const usage = await service.fetchUsageData();
       res.json(usage);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      if (message === "No session key found" || message === "Invalid session key format" || message === "Unauthorized") {
-          res.status(401).json({ error: message });
+
+      if (message.includes("Authentication required") || message.includes("token_expired")) {
+        res.status(401).json({
+          error: "Authentication required",
+          message: "Please run 'claude login' to authenticate"
+        });
+      } else if (message.includes("timed out")) {
+        res.status(504).json({
+          error: "Command timed out",
+          message: "The Claude CLI took too long to respond"
+        });
       } else {
-          console.error("Error fetching usage:", error);
-          res.status(500).json({ error: message });
+        console.error("Error fetching usage:", error);
+        res.status(500).json({ error: message });
       }
     }
-  });
-
-  // Save session key
-  router.post("/key", async (req: Request, res: Response) => {
-    try {
-      const { key } = req.body;
-      if (!key || typeof key !== "string") {
-        res.status(400).json({ error: "Key is required" });
-        return;
-      }
-
-      // Validate key format
-      const trimmedKey = key.trim();
-      if (!trimmedKey.startsWith("sk-ant-")) {
-        res.status(400).json({ error: "Invalid session key format. Key must start with 'sk-ant-'" });
-        return;
-      }
-      
-      await service.saveSessionKey(key);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error saving key:", error);
-      res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
-    }
-  });
-
-  // Check if key exists (lightweight check for UI state)
-  router.get("/key/check", async (req: Request, res: Response) => {
-      try {
-          await service.getSessionKey();
-          res.json({ exists: true });
-      } catch (error) {
-          res.json({ exists: false });
-      }
   });
 
   return router;
